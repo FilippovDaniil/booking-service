@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./gradlew compileJava)",
+      "Bash(./gradlew build *)",
+      "Bash(./gradlew --version)",
+      "Bash(./gradlew bootRun)",
+      "Bash(jobs -l)",
+      "Bash(kill %1)",
+      "Bash(curl -s http://localhost:8080/swagger-ui.html)",
+      "Bash(curl -s -X POST http://localhost:8080/api/auth/register -H 'Content-Type: application/json' -d '{\"email\":\"admin@test.com\",\"password\":\"admin123\",\"firstName\":\"Admin\",\"lastName\":\"User\",\"role\":\"CLIENT\"}')",
+      "Bash(grep 8080 echo \"---\")",
+      "Bash(tasklist *)",
+      "PowerShell(netstat *)",
+      "Bash(curl -s http://localhost:8081/api/auth/register -X POST -H 'Content-Type: application/json' -d '{\"email\":\"test@test.com\",\"password\":\"test123\",\"firstName\":\"Test\",\"lastName\":\"User\",\"role\":\"CLIENT\"}')",
+      "Bash(kill %1 docker --version)",
+      "Bash(curl -s -X POST http://localhost:8081/api/auth/register -H 'Content-Type: application/json' -d '{\"email\":\"client@test.com\",\"password\":\"pass1234\",\"firstName\":\"Ivan\",\"lastName\":\"Petrov\",\"role\":\"CLIENT\"}')",
+      "Bash(curl -s -X POST http://localhost:8081/api/auth/register -H 'Content-Type: application/json' -d '{\"email\":\"landlord@test.com\",\"password\":\"pass1234\",\"firstName\":\"Petr\",\"lastName\":\"Sidorov\",\"role\":\"LANDLORD\"}')",
+      "Bash(curl -s -X POST http://localhost:8555/api/auth/register -H 'Content-Type: application/json' -d '{\"email\":\"client@test.com\",\"password\":\"pass1234\",\"firstName\":\"Ivan\",\"lastName\":\"Petrov\",\"role\":\"CLIENT\"}')",
+      "Bash(curl -s -X POST http://localhost:8555/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"client@test.com\",\"password\":\"pass1234\"}')"
+    ]
+  }
+}
