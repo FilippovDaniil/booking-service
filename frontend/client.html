@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Клиент — PetBooking</title>
+<link rel="stylesheet" href="shared.css">
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="sidebar-logo">🏠 Pet<span style="color:#6366f1">Booking</span></div>
+  <div class="sidebar-user">
+    <div class="avatar" id="sidebar-avatar">?</div>
+    <div class="user-info">
+      <div class="user-name" id="sidebar-name">Загрузка...</div>
+      <div class="user-role">Клиент</div>
+    </div>
+  </div>
+  <nav class="nav">
+    <div class="nav-item active" data-section="dashboard" onclick="showSection('dashboard')"><span class="icon">📊</span> Дашборд</div>
+    <div class="nav-item" data-section="search" onclick="showSection('search');loadSearch()"><span class="icon">🔍</span> Найти квартиру</div>
+    <div class="nav-item" data-section="bookings" onclick="showSection('bookings');loadBookings()"><span class="icon">📅</span> Мои бронирования</div>
+    <div class="nav-item" data-section="profile" onclick="showSection('profile');loadProfile()"><span class="icon">👤</span> Профиль</div>
+  </nav>
+  <div class="sidebar-footer">
+    <button class="btn-logout" onclick="doLogout()">🚪 Выйти</button>
+  </div>
+</aside>
+
+<main class="main">
+
+  <!-- ── DASHBOARD ── -->
+  <div id="dashboard" class="section active">
+    <div class="page-header"><h1>Дашборд</h1><p>Добро пожаловать! Ваши бронирования в одном месте.</p></div>
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-icon si-blue">📅</div><div><div class="stat-value" id="st-total">—</div><div class="stat-label">Всего бронирований</div></div></div>
+      <div class="stat-card"><div class="stat-icon si-yellow">⏳</div><div><div class="stat-value" id="st-pending">—</div><div class="stat-label">Ожидают</div></div></div>
+      <div class="stat-card"><div class="stat-icon si-green">✅</div><div><div class="stat-value" id="st-confirmed">—</div><div class="stat-label">Подтверждено</div></div></div>
+      <div class="stat-card"><div class="stat-icon si-teal">🏁</div><div><div class="stat-value" id="st-completed">—</div><div class="stat-label">Завершено</div></div></div>
+    </div>
+    <div class="table-wrap">
+      <div class="table-top"><h3>Последние бронирования</h3><button class="btn btn-primary btn-sm" onclick="showSection('bookings');loadBookings()">Все бронирования</button></div>
+      <div id="dash-bookings-body"></div>
+    </div>
+  </div>
+
+  <!-- ── SEARCH ── -->
+  <div id="search" class="section">
+    <div class="page-header"><h1>Найти квартиру</h1><p>Введите параметры и выберите подходящее жильё</p></div>
+    <div class="card mb-20">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 100px auto;gap:14px;align-items:end;">
+        <div class="form-group" style="margin:0"><label class="form-label">Город</label><input id="sc-city" class="form-control" type="text" placeholder="Москва"></div>
+        <div class="form-group" style="margin:0"><label class="form-label">Заезд</label><input id="sc-in" class="form-control" type="date"></div>
+        <div class="form-group" style="margin:0"><label class="form-label">Выезд</label><input id="sc-out" class="form-control" type="date"></div>
+        <div class="form-group" style="margin:0"><label class="form-label">Гостей</label><input id="sc-guests" class="form-control" type="number" min="1" value="1"></div>
+        <button class="btn btn-primary" onclick="doSearch()">🔍 Найти</button>
+      </div>
+    </div>
+    <div id="search-results">
+      <div class="empty-state"><div class="empty-icon">🔍</div><p>Укажите город и даты для поиска</p></div>
+    </div>
+  </div>
+
+  <!-- ── BOOKINGS ── -->
+  <div id="bookings" class="section">
+    <div class="page-header"><h1>Мои бронирования</h1></div>
+    <div class="tabs">
+      <div class="tab active" onclick="filterBookings(this,'ALL')">Все</div>
+      <div class="tab" onclick="filterBookings(this,'PENDING')">Ожидают</div>
+      <div class="tab" onclick="filterBookings(this,'CONFIRMED')">Активные</div>
+      <div class="tab" onclick="filterBookings(this,'COMPLETED')">Завершённые</div>
+      <div class="tab" onclick="filterBookings(this,'CANCELLED')">Отменённые</div>
+    </div>
+    <div class="table-wrap"><div id="bookings-body"></div></div>
+  </div>
+
+  <!-- ── PROFILE ── -->
+  <div id="profile" class="section">
+    <div class="page-header"><h1>Профиль</h1></div>
+    <div class="grid-2" style="max-width:800px;">
+      <div class="card">
+        <div class="card-title">Личные данные</div>
+        <form onsubmit="saveProfile(event)">
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">Имя</label><input id="p-fn" class="form-control" type="text" required></div>
+            <div class="form-group"><label class="form-label">Фамилия</label><input id="p-ln" class="form-control" type="text" required></div>
+          </div>
+          <div class="form-group"><label class="form-label">Email</label><input id="p-email" class="form-control" type="email" disabled style="background:#f8fafc"></div>
+          <div class="form-group"><label class="form-label">Роль</label><input class="form-control" value="Клиент" disabled style="background:#f8fafc"></div>
+          <button type="submit" class="btn btn-primary" id="save-profile-btn">Сохранить</button>
+        </form>
+      </div>
+      <div class="card">
+        <div class="card-title">Статистика</div>
+        <div style="display:flex;flex-direction:column;gap:14px;">
+          <div style="display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px solid #f1f5f9;font-size:14px;"><span style="color:#64748b">Всего бронирований</span><span id="p-st-total" style="font-weight:600">—</span></div>
+          <div style="display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px solid #f1f5f9;font-size:14px;"><span style="color:#64748b">Подтверждённых</span><span id="p-st-conf" style="font-weight:600">—</span></div>
+          <div style="display:flex;justify-content:space-between;padding:12px 0;font-size:14px;"><span style="color:#64748b">Завершённых</span><span id="p-st-done" style="font-weight:600">—</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<!-- Book modal -->
+<div id="book-modal" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-header"><h2>Бронирование</h2><button class="modal-close" onclick="closeModal('book-modal')">✕</button></div>
+    <div id="book-apt-info" style="background:#f8fafc;border-radius:10px;padding:14px;margin-bottom:16px;font-size:14px;"></div>
+    <form onsubmit="submitBooking(event)">
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Заезд</label><input id="b-in" class="form-control" type="date" required></div>
+        <div class="form-group"><label class="form-label">Выезд</label><input id="b-out" class="form-control" type="date" required></div>
+      </div>
+      <div class="form-group"><label class="form-label">Кол-во гостей</label><input id="b-guests" class="form-control" type="number" min="1" value="1" required></div>
+      <div id="b-price-preview" style="background:#f0f0ff;border-radius:9px;padding:12px;margin-bottom:14px;font-size:14px;display:none;"></div>
+      <div class="form-err" id="b-err"></div>
+      <button type="submit" class="btn btn-primary" style="width:100%" id="b-btn">Забронировать</button>
+    </form>
+  </div>
+</div>
+
+<script src="shared.js"></script>
+<script>
+let allBookings = [];
+let currentApt  = null;
+const BGRADS = ['linear-gradient(135deg,#6366f1,#8b5cf6)','linear-gradient(135deg,#0ea5e9,#6366f1)','linear-gradient(135deg,#10b981,#0ea5e9)','linear-gradient(135deg,#f59e0b,#ef4444)'];
+
+document.addEventListener('DOMContentLoaded', () => {
+  if (!requireAuth('CLIENT')) return;
+  initSidebar();
+  loadDashboard();
+  const d1 = new Date(); d1.setDate(d1.getDate()+1);
+  const d2 = new Date(); d2.setDate(d2.getDate()+7);
+  document.getElementById('sc-in').value  = d1.toISOString().slice(0,10);
+  document.getElementById('sc-out').value = d2.toISOString().slice(0,10);
+});
+
+async function loadDashboard() {
+  try {
+    const res = await api('/api/bookings');
+    if (!res.ok) return;
+    allBookings = await res.json();
+    document.getElementById('st-total').textContent = allBookings.length;
+    document.getElementById('st-pending').textContent   = allBookings.filter(b=>b.status==='PENDING').length;
+    document.getElementById('st-confirmed').textContent = allBookings.filter(b=>b.status==='CONFIRMED').length;
+    document.getElementById('st-completed').textContent = allBookings.filter(b=>b.status==='COMPLETED').length;
+    document.getElementById('p-st-total').textContent = allBookings.length;
+    document.getElementById('p-st-conf').textContent  = allBookings.filter(b=>b.status==='CONFIRMED').length;
+    document.getElementById('p-st-done').textContent  = allBookings.filter(b=>b.status==='COMPLETED').length;
+    renderBookingsTable(allBookings.slice(0,5), 'dash-bookings-body', false);
+  } catch {}
+}
+
+async function loadBookings() {
+  showLoading('bookings-body');
+  try {
+    const res = await api('/api/bookings');
+    if (!res.ok) throw new Error();
+    allBookings = await res.json();
+    renderBookingsTable(allBookings, 'bookings-body', true);
+  } catch { showEmpty('bookings-body','Не удалось загрузить бронирования'); }
+}
+
+function filterBookings(el, status) {
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  const CANCELLED = ['CANCELLED_BY_CLIENT','CANCELLED_BY_LANDLORD','EXPIRED'];
+  const filtered = status === 'ALL' ? allBookings
+    : status === 'CANCELLED' ? allBookings.filter(b=>CANCELLED.includes(b.status))
+    : allBookings.filter(b=>b.status===status);
+  renderBookingsTable(filtered, 'bookings-body', true);
+}
+
+function renderBookingsTable(data, targetId, showActions) {
+  const el = document.getElementById(targetId);
+  if (!data.length) { showEmpty(targetId,'Бронирований нет'); return; }
+  el.innerHTML = `<table>
+    <thead><tr><th>Квартира</th><th>Заезд</th><th>Выезд</th><th>Стоимость</th><th>Статус</th>${showActions?'<th>Действия</th>':''}</tr></thead>
+    <tbody>${data.map(b=>`
+      <tr>
+        <td><strong>${esc(b.apartmentName||'Квартира #'+b.apartmentId)}</strong><br><span class="text-muted">${esc(b.apartmentCity||'')}</span></td>
+        <td>${fmtDate(b.startDate)}</td>
+        <td>${fmtDate(b.endDate)}</td>
+        <td><strong>${fmtMoney(b.totalPrice)}</strong></td>
+        <td>${fmtStatus(b.status)}</td>
+        ${showActions?`<td>${b.status==='PENDING'||b.status==='CONFIRMED'?`<button class="btn btn-outline-danger btn-sm" onclick="cancelBooking(${b.id})">Отменить</button>`:'—'}</td>`:''}
+      </tr>`).join('')}
+    </tbody></table>`;
+}
+
+async function cancelBooking(id) {
+  if (!confirm('Отменить бронирование?')) return;
+  try {
+    const res = await api(`/api/bookings/${id}/cancel`, {method:'POST'});
+    if (!res.ok) throw new Error((await res.json().catch(()=>({}))).message||'Ошибка');
+    toast('Бронирование отменено','success');
+    loadBookings(); loadDashboard();
+  } catch(e) { toast(e.message,'error'); }
+}
+
+async function doSearch() {
+  const city   = document.getElementById('sc-city').value.trim();
+  const sDate  = document.getElementById('sc-in').value;
+  const eDate  = document.getElementById('sc-out').value;
+  const guests = document.getElementById('sc-guests').value;
+  if (!city||!sDate||!eDate) { toast('Заполните все поля','error'); return; }
+  if (sDate>=eDate) { toast('Дата выезда должна быть позже заезда','error'); return; }
+
+  const results = document.getElementById('search-results');
+  results.innerHTML = '<div class="loading"><div class="spinner"></div>Поиск...</div>';
+  const params = new URLSearchParams({city,startDate:sDate,endDate:eDate,guests,size:20});
+  try {
+    const res = await api(`/api/apartments?${params}`);
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    const items = data.content||data;
+    if (!items.length) { showEmpty('search-results','Квартиры не найдены по вашему запросу'); return; }
+    results.innerHTML = `<div class="apt-grid">${items.map((a,i)=>`
+      <div class="apt-card" onclick='openBookModal(${JSON.stringify(a).replace(/'/g,"&#39;")}, "${sDate}", "${eDate}")'>
+        <div class="apt-thumb" style="background:${BGRADS[i%BGRADS.length]}">🏠</div>
+        <div class="apt-body">
+          <div class="apt-name">${esc(a.name)}</div>
+          <div class="apt-city">📍 ${esc(a.city)}</div>
+          <div class="apt-footer">
+            <div class="apt-price">${fmtMoney(a.pricePerNight)}<span>/ночь</span></div>
+            <div class="apt-guests">До ${a.maxGuests} гостей</div>
+          </div>
+        </div>
+      </div>`).join('')}</div>`;
+  } catch(e) { results.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠</div><p>${esc(e.message)}</p></div>`; }
+}
+
+function openBookModal(apt, sDate, eDate) {
+  currentApt = apt;
+  document.getElementById('b-in').value     = sDate;
+  document.getElementById('b-out').value    = eDate;
+  document.getElementById('b-guests').value = document.getElementById('sc-guests').value;
+  document.getElementById('b-err').style.display = 'none';
+  document.getElementById('book-apt-info').innerHTML = `<strong>${esc(apt.name)}</strong><br><span style="color:#64748b;font-size:13px;">📍 ${esc(apt.city)} · ${fmtMoney(apt.pricePerNight)}/ночь</span>`;
+  updatePricePreview();
+  openModal('book-modal');
+}
+
+function updatePricePreview() {
+  if (!currentApt) return;
+  const s = document.getElementById('b-in').value;
+  const e = document.getElementById('b-out').value;
+  if (!s||!e||s>=e) return;
+  const nights = Math.round((new Date(e)-new Date(s))/(86400000));
+  const total  = nights * currentApt.pricePerNight;
+  const pv = document.getElementById('b-price-preview');
+  pv.style.display='block';
+  pv.innerHTML = `<div style="display:flex;justify-content:space-between;"><span style="color:#64748b">${fmtMoney(currentApt.pricePerNight)} × ${nights} ночей</span><strong>${fmtMoney(total)}</strong></div>`;
+}
+document.addEventListener('change', e => { if(e.target.id==='b-in'||e.target.id==='b-out') updatePricePreview(); });
+
+async function submitBooking(e) {
+  e.preventDefault();
+  const btn = document.getElementById('b-btn');
+  const err = document.getElementById('b-err');
+  btn.textContent='Бронирование...'; btn.disabled=true; err.style.display='none';
+  try {
+    const res = await api('/api/bookings', {
+      method:'POST',
+      body: JSON.stringify({
+        apartmentId: currentApt.id,
+        startDate: document.getElementById('b-in').value,
+        endDate:   document.getElementById('b-out').value,
+        guests:    parseInt(document.getElementById('b-guests').value)
+      })
+    });
+    if (!res.ok) { const d = await res.json().catch(()=>({message:'Ошибка'})); throw new Error(d.message); }
+    toast('Бронирование создано! Ожидайте подтверждения арендодателя','success');
+    closeModal('book-modal');
+    loadDashboard();
+  } catch(ex) { err.textContent=ex.message; err.style.display='block'; }
+  finally { btn.textContent='Забронировать'; btn.disabled=false; }
+}
+
+async function loadProfile() {
+  try {
+    const res = await api('/api/users/me');
+    if (!res.ok) return;
+    const u = await res.json();
+    document.getElementById('p-fn').value    = u.firstName||'';
+    document.getElementById('p-ln').value    = u.lastName||'';
+    document.getElementById('p-email').value = u.email||'';
+  } catch {}
+}
+
+async function saveProfile(e) {
+  e.preventDefault();
+  const btn = document.getElementById('save-profile-btn');
+  btn.textContent='Сохранение...'; btn.disabled=true;
+  try {
+    const res = await api('/api/users/me', {
+      method:'PUT',
+      body: JSON.stringify({firstName:document.getElementById('p-fn').value, lastName:document.getElementById('p-ln').value})
+    });
+    if (!res.ok) throw new Error();
+    const u = await res.json();
+    document.getElementById('sidebar-name').textContent = `${u.firstName} ${u.lastName}`;
+    localStorage.setItem('currentUser', JSON.stringify(u));
+    toast('Профиль обновлён','success');
+  } catch { toast('Ошибка сохранения','error'); }
+  finally { btn.textContent='Сохранить'; btn.disabled=false; }
+}
+
+function esc(s){ return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+</script>
+</body>
+</html>

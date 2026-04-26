@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Администратор — PetBooking</title>
+<link rel="stylesheet" href="shared.css">
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="sidebar-logo">🏠 Pet<span style="color:#6366f1">Booking</span></div>
+  <div class="sidebar-user">
+    <div class="avatar" id="sidebar-avatar">?</div>
+    <div class="user-info">
+      <div class="user-name" id="sidebar-name">Загрузка...</div>
+      <div class="user-role">Администратор</div>
+    </div>
+  </div>
+  <nav class="nav">
+    <div class="nav-item active" data-section="dashboard" onclick="showSection('dashboard')"><span class="icon">📊</span> Дашборд</div>
+    <div class="nav-item" data-section="users" onclick="showSection('users');loadUsers()"><span class="icon">👥</span> Пользователи</div>
+    <div class="nav-item" data-section="apartments" onclick="showSection('apartments');loadApartments()"><span class="icon">🏠</span> Квартиры</div>
+    <div class="nav-item" data-section="bookings" onclick="showSection('bookings');loadBookings()"><span class="icon">📅</span> Бронирования</div>
+  </nav>
+  <div class="sidebar-footer">
+    <button class="btn-logout" onclick="doLogout()">🚪 Выйти</button>
+  </div>
+</aside>
+
+<main class="main">
+
+  <!-- ── DASHBOARD ── -->
+  <div id="dashboard" class="section active">
+    <div class="page-header"><h1>Системный дашборд</h1><p>Общая статистика платформы</p></div>
+    <div class="stats-grid" style="grid-template-columns:repeat(3,1fr)">
+      <div class="stat-card"><div class="stat-icon si-blue">👥</div><div><div class="stat-value" id="st-users">—</div><div class="stat-label">Пользователей</div></div></div>
+      <div class="stat-card"><div class="stat-icon si-green">🏠</div><div><div class="stat-value" id="st-apts">—</div><div class="stat-label">Квартир</div></div></div>
+      <div class="stat-card"><div class="stat-icon si-purple">📅</div><div><div class="stat-value" id="st-bookings">—</div><div class="stat-label">Бронирований</div></div></div>
+    </div>
+    <div class="grid-2">
+      <div class="table-wrap">
+        <div class="table-top"><h3>Последние бронирования</h3><button class="btn btn-sm btn-primary" onclick="showSection('bookings');loadBookings()">Все</button></div>
+        <div id="dash-bookings"></div>
+      </div>
+      <div class="table-wrap">
+        <div class="table-top"><h3>Последние пользователи</h3><button class="btn btn-sm btn-primary" onclick="showSection('users');loadUsers()">Все</button></div>
+        <div id="dash-users"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── USERS ── -->
+  <div id="users" class="section">
+    <div class="page-header"><h1>Пользователи</h1></div>
+    <div class="search-bar">
+      <div class="form-group"><input id="u-search" class="form-control" type="text" placeholder="Поиск по имени или email..." oninput="filterUsers()"></div>
+      <div class="form-group">
+        <select id="u-role" class="form-control" onchange="filterUsers()">
+          <option value="">Все роли</option>
+          <option value="CLIENT">Клиент</option>
+          <option value="LANDLORD">Арендодатель</option>
+          <option value="ADMIN">Администратор</option>
+        </select>
+      </div>
+    </div>
+    <div class="table-wrap"><div id="users-body"></div></div>
+  </div>
+
+  <!-- ── APARTMENTS ── -->
+  <div id="apartments" class="section">
+    <div class="page-header"><h1>Квартиры</h1></div>
+    <div class="search-bar">
+      <div class="form-group"><input id="a-search" class="form-control" type="text" placeholder="Поиск по названию или городу..." oninput="filterApartments()"></div>
+      <div class="form-group">
+        <select id="a-status" class="form-control" onchange="filterApartments()">
+          <option value="">Все</option>
+          <option value="true">Активные</option>
+          <option value="false">Неактивные</option>
+        </select>
+      </div>
+    </div>
+    <div class="table-wrap"><div id="apts-body"></div></div>
+  </div>
+
+  <!-- ── BOOKINGS ── -->
+  <div id="bookings" class="section">
+    <div class="page-header"><h1>Все бронирования</h1></div>
+    <div class="search-bar">
+      <div class="form-group">
+        <select id="b-status" class="form-control" onchange="filterBookings()">
+          <option value="">Все статусы</option>
+          <option value="PENDING">Ожидают</option>
+          <option value="CONFIRMED">Подтверждено</option>
+          <option value="COMPLETED">Завершено</option>
+          <option value="CANCELLED_BY_CLIENT">Отм. клиентом</option>
+          <option value="CANCELLED_BY_LANDLORD">Отм. арендодателем</option>
+          <option value="EXPIRED">Истёкшие</option>
+        </select>
+      </div>
+    </div>
+    <div class="table-wrap"><div id="bookings-body"></div></div>
+  </div>
+
+</main>
+
+<!-- Change status modal -->
+<div id="status-modal" class="modal-overlay">
+  <div class="modal" style="max-width:380px;">
+    <div class="modal-header"><h2>Изменить статус</h2><button class="modal-close" onclick="closeModal('status-modal')">✕</button></div>
+    <p style="font-size:14px;color:#475569;margin-bottom:16px;">Бронирование #<span id="sm-id"></span></p>
+    <div class="form-group">
+      <label class="form-label">Новый статус</label>
+      <select id="sm-status" class="form-control">
+        <option value="PENDING">Ожидает</option>
+        <option value="CONFIRMED">Подтверждено</option>
+        <option value="CANCELLED_BY_CLIENT">Отменено клиентом</option>
+        <option value="CANCELLED_BY_LANDLORD">Отменено арендодателем</option>
+        <option value="EXPIRED">Истёк</option>
+        <option value="COMPLETED">Завершено</option>
+      </select>
+    </div>
+    <div style="display:flex;gap:10px;">
+      <button class="btn btn-primary" onclick="applyStatus()">Применить</button>
+      <button class="btn btn-secondary" onclick="closeModal('status-modal')">Отмена</button>
+    </div>
+  </div>
+</div>
+
+<script src="shared.js"></script>
+<script>
+let allUsers = [], allApartments = [], allBookings = [];
+
+document.addEventListener('DOMContentLoaded', () => {
+  if (!requireAuth('ADMIN')) return;
+  initSidebar();
+  loadDashboard();
+});
+
+async function loadDashboard() {
+  try {
+    const res = await api('/api/admin/stats');
+    if (res.ok) {
+      const stats = await res.json();
+      document.getElementById('st-users').textContent    = stats.totalUsers    ?? '—';
+      document.getElementById('st-apts').textContent     = stats.totalApartments ?? '—';
+      document.getElementById('st-bookings').textContent = stats.totalBookings  ?? '—';
+    }
+  } catch {}
+
+  try {
+    const [bRes, uRes] = await Promise.all([api('/api/bookings'), api('/api/users')]);
+    if (bRes.ok) {
+      allBookings = await bRes.json();
+      renderBookingsMini(allBookings.slice(0,5),'dash-bookings');
+    }
+    if (uRes.ok) {
+      allUsers = await uRes.json();
+      renderUsersMini(allUsers.slice(0,5),'dash-users');
+    }
+  } catch {}
+}
+
+function renderUsersMini(data,id) {
+  const el = document.getElementById(id);
+  if (!data.length) { showEmpty(id,'Пользователей нет'); return; }
+  el.innerHTML = `<table><thead><tr><th>Имя</th><th>Email</th><th>Роль</th></tr></thead><tbody>
+    ${data.map(u=>`<tr><td>${esc(u.firstName)} ${esc(u.lastName)}</td><td>${esc(u.email)}</td><td><span class="badge badge-info">${fmtRole(u.role)}</span></td></tr>`).join('')}
+    </tbody></table>`;
+}
+
+function renderBookingsMini(data,id) {
+  const el = document.getElementById(id);
+  if (!data.length) { showEmpty(id,'Бронирований нет'); return; }
+  el.innerHTML = `<table><thead><tr><th>#</th><th>Квартира</th><th>Статус</th></tr></thead><tbody>
+    ${data.map(b=>`<tr><td>${b.id}</td><td>${esc(b.apartmentName||'Квартира #'+b.apartmentId)}</td><td>${fmtStatus(b.status)}</td></tr>`).join('')}
+    </tbody></table>`;
+}
+
+// ── USERS ───────────────────────────────────────────────────────────────────
+async function loadUsers() {
+  showLoading('users-body');
+  try {
+    const res = await api('/api/users');
+    if (!res.ok) throw new Error();
+    allUsers = await res.json();
+    renderUsers(allUsers);
+  } catch { showEmpty('users-body','Не удалось загрузить'); }
+}
+
+function filterUsers() {
+  const q    = document.getElementById('u-search').value.toLowerCase();
+  const role = document.getElementById('u-role').value;
+  const filtered = allUsers.filter(u => {
+    const text = `${u.firstName} ${u.lastName} ${u.email}`.toLowerCase();
+    return (!q || text.includes(q)) && (!role || u.role===role);
+  });
+  renderUsers(filtered);
+}
+
+function renderUsers(data) {
+  const el = document.getElementById('users-body');
+  if (!data.length) { showEmpty('users-body','Пользователи не найдены'); return; }
+  el.innerHTML = `<table>
+    <thead><tr><th>ID</th><th>Имя</th><th>Email</th><th>Роль</th><th>Статус</th><th>Действия</th></tr></thead>
+    <tbody>${data.map(u=>`
+      <tr>
+        <td style="color:#94a3b8">#${u.id}</td>
+        <td><strong>${esc(u.firstName)} ${esc(u.lastName)}</strong></td>
+        <td>${esc(u.email)}</td>
+        <td><span class="badge badge-info">${fmtRole(u.role)}</span></td>
+        <td><span class="badge ${u.enabled!==false?'badge-success':'badge-danger'}">${u.enabled!==false?'Активен':'Заблокирован'}</span></td>
+        <td style="display:flex;gap:6px;">
+          <button class="btn btn-sm ${u.enabled!==false?'btn-warning':'btn-success'}" onclick="toggleBlock(${u.id},'${esc(u.firstName)} ${esc(u.lastName)}',${u.enabled!==false})">${u.enabled!==false?'Блок':'Разблок'}</button>
+          <button class="btn btn-sm btn-outline-danger" onclick="deleteUser(${u.id},'${esc(u.firstName)} ${esc(u.lastName)}')">Удалить</button>
+        </td>
+      </tr>`).join('')}
+    </tbody></table>`;
+}
+
+async function toggleBlock(id, name, isEnabled) {
+  if (!confirm(`${isEnabled?'Заблокировать':'Разблокировать'} пользователя "${name}"?`)) return;
+  try {
+    const res = await api(`/api/users/${id}/block`, {method:'PUT'});
+    if (!res.ok) throw new Error();
+    toast(`Пользователь ${isEnabled?'заблокирован':'разблокирован'}`, 'success');
+    loadUsers();
+  } catch { toast('Ошибка','error'); }
+}
+
+async function deleteUser(id, name) {
+  if (!confirm(`Удалить пользователя "${name}"? Это действие необратимо!`)) return;
+  try {
+    const res = await api(`/api/users/${id}`, {method:'DELETE'});
+    if (!res.ok) throw new Error();
+    toast('Пользователь удалён','success');
+    loadUsers(); loadDashboard();
+  } catch { toast('Ошибка удаления','error'); }
+}
+
+// ── APARTMENTS ──────────────────────────────────────────────────────────────
+async function loadApartments() {
+  showLoading('apts-body');
+  try {
+    const res = await api('/api/admin/stats');
+    // Admin doesn't have a separate apartments listing endpoint
+    // We'll note that limitation and show a message
+    showEmpty('apts-body', 'Используйте базу данных для просмотра всех квартир. Admin API: GET /api/admin/stats');
+  } catch { showEmpty('apts-body','Нет доступа'); }
+}
+
+function filterApartments() { /* search on client side once data loaded */ }
+
+// ── BOOKINGS ─────────────────────────────────────────────────────────────────
+async function loadBookings() {
+  showLoading('bookings-body');
+  try {
+    const res = await api('/api/bookings');
+    if (!res.ok) throw new Error();
+    allBookings = await res.json();
+    renderBookings(allBookings);
+  } catch { showEmpty('bookings-body','Не удалось загрузить'); }
+}
+
+function filterBookings() {
+  const status = document.getElementById('b-status').value;
+  const filtered = !status ? allBookings : allBookings.filter(b=>b.status===status);
+  renderBookings(filtered);
+}
+
+function renderBookings(data) {
+  const el = document.getElementById('bookings-body');
+  if (!data.length) { showEmpty('bookings-body','Бронирований нет'); return; }
+  el.innerHTML = `<table>
+    <thead><tr><th>ID</th><th>Клиент</th><th>Квартира</th><th>Заезд</th><th>Выезд</th><th>Сумма</th><th>Статус</th><th>Действия</th></tr></thead>
+    <tbody>${data.map(b=>`
+      <tr>
+        <td style="color:#94a3b8">#${b.id}</td>
+        <td>${esc(b.clientName||'#'+b.clientId)}</td>
+        <td>${esc(b.apartmentName||'#'+b.apartmentId)}</td>
+        <td>${fmtDate(b.startDate)}</td>
+        <td>${fmtDate(b.endDate)}</td>
+        <td>${fmtMoney(b.totalPrice)}</td>
+        <td>${fmtStatus(b.status)}</td>
+        <td><button class="btn btn-sm btn-secondary" onclick="openStatusModal(${b.id},'${b.status}')">⚙ Статус</button></td>
+      </tr>`).join('')}
+    </tbody></table>`;
+}
+
+function openStatusModal(id, currentStatus) {
+  document.getElementById('sm-id').textContent    = id;
+  document.getElementById('sm-status').value      = currentStatus;
+  document.getElementById('status-modal').dataset.bookingId = id;
+  openModal('status-modal');
+}
+
+async function applyStatus() {
+  const id     = document.getElementById('status-modal').dataset.bookingId;
+  const status = document.getElementById('sm-status').value;
+  try {
+    const res = await api(`/api/admin/bookings/${id}/status?status=${status}`, {method:'PUT'});
+    if (!res.ok) throw new Error((await res.json().catch(()=>({}))).message||'Ошибка');
+    toast('Статус изменён','success');
+    closeModal('status-modal'); loadBookings();
+  } catch(e) { toast(e.message,'error'); }
+}
+
+function esc(s){ return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+</script>
+</body>
+</html>

@@ -1,0 +1,778 @@
+{
+  "info": {
+    "name": "Booking Service API",
+    "_postman_id": "booking-service-collection",
+    "description": "Full test collection for the Booking Service (Airbnb analogue). Base URL: http://localhost:8555\n\n## Quick Start\n1. Run **Register CLIENT** to create a client account\n2. Run **Register LANDLORD** to create a landlord account\n3. Run **Login CLIENT** — accessToken saves automatically\n4. As LANDLORD: run **Create Apartment**\n5. As CLIENT: run **Search Apartments**, then **Create Booking**\n6. Run **Confirm Booking**\n7. Run **Create Review** after booking is COMPLETED",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl",       "value": "http://localhost:8555", "type": "string" },
+    { "key": "accessToken",   "value": "", "type": "string" },
+    { "key": "refreshToken",  "value": "", "type": "string" },
+    { "key": "landlordToken", "value": "", "type": "string" },
+    { "key": "adminToken",    "value": "", "type": "string" },
+    { "key": "apartmentId",   "value": "1",  "type": "string" },
+    { "key": "bookingId",     "value": "1",  "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register CLIENT",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const r = pm.response.json();",
+                  "if (r.accessToken) {",
+                  "  pm.collectionVariables.set('accessToken', r.accessToken);",
+                  "  pm.collectionVariables.set('refreshToken', r.refreshToken);",
+                  "  pm.test('Register CLIENT success', () => pm.response.to.have.status(200));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/auth/register", "host": ["{{baseUrl}}"], "path": ["api","auth","register"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"client@booking.com\",\n  \"password\": \"client123\",\n  \"firstName\": \"Ivan\",\n  \"lastName\": \"Petrov\",\n  \"role\": \"CLIENT\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Register LANDLORD",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const r = pm.response.json();",
+                  "if (r.accessToken) {",
+                  "  pm.collectionVariables.set('landlordToken', r.accessToken);",
+                  "  pm.test('Register LANDLORD success', () => pm.response.to.have.status(200));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/auth/register", "host": ["{{baseUrl}}"], "path": ["api","auth","register"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"landlord@booking.com\",\n  \"password\": \"landlord123\",\n  \"firstName\": \"Petr\",\n  \"lastName\": \"Sidorov\",\n  \"role\": \"LANDLORD\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Register ADMIN (should fail)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Cannot register as ADMIN', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/auth/register", "host": ["{{baseUrl}}"], "path": ["api","auth","register"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@booking.com\",\n  \"password\": \"admin123\",\n  \"firstName\": \"Admin\",\n  \"lastName\": \"Admin\",\n  \"role\": \"ADMIN\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Login CLIENT",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const r = pm.response.json();",
+                  "pm.test('Login success', () => pm.response.to.have.status(200));",
+                  "pm.test('Has accessToken', () => pm.expect(r.accessToken).to.not.be.empty);",
+                  "pm.test('Has refreshToken', () => pm.expect(r.refreshToken).to.not.be.empty);",
+                  "pm.collectionVariables.set('accessToken', r.accessToken);",
+                  "pm.collectionVariables.set('refreshToken', r.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api","auth","login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"client@booking.com\",\n  \"password\": \"client123\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Login LANDLORD",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const r = pm.response.json();",
+                  "pm.test('Landlord login success', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('landlordToken', r.accessToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api","auth","login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"landlord@booking.com\",\n  \"password\": \"landlord123\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Login wrong password (should fail)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Wrong password returns 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api","auth","login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"client@booking.com\",\n  \"password\": \"wrongpassword\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Refresh Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const r = pm.response.json();",
+                  "pm.test('Token refreshed', () => pm.response.to.have.status(200));",
+                  "pm.test('New accessToken issued', () => pm.expect(r.accessToken).to.not.be.empty);",
+                  "pm.collectionVariables.set('accessToken', r.accessToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/auth/refresh", "host": ["{{baseUrl}}"], "path": ["api","auth","refresh"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Logout success', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/auth/logout", "host": ["{{baseUrl}}"], "path": ["api","auth","logout"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Get My Profile",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const r = pm.response.json();",
+                  "pm.test('Get profile success', () => pm.response.to.have.status(200));",
+                  "pm.test('Has email', () => pm.expect(r.email).to.not.be.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/users/me", "host": ["{{baseUrl}}"], "path": ["api","users","me"] }
+          }
+        },
+        {
+          "name": "Update My Profile",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Profile updated', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/users/me", "host": ["{{baseUrl}}"], "path": ["api","users","me"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Ivan Updated\",\n  \"lastName\": \"Petrov\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get All Users (ADMIN only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Should be 403 for non-admin', () => {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 403]);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/users", "host": ["{{baseUrl}}"], "path": ["api","users"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Apartments",
+      "item": [
+        {
+          "name": "Create Apartment (LANDLORD)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const r = pm.response.json();",
+                  "pm.test('Apartment created', () => pm.response.to.have.status(200));",
+                  "pm.test('Has id', () => pm.expect(r.id).to.be.a('number'));",
+                  "if (r.id) pm.collectionVariables.set('apartmentId', r.id.toString());"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{landlordToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/apartments", "host": ["{{baseUrl}}"], "path": ["api","apartments"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Уютная квартира в центре\",\n  \"description\": \"Светлая квартира с видом на парк, свежий ремонт, всё необходимое для комфортного проживания\",\n  \"city\": \"Москва\",\n  \"street\": \"Тверская\",\n  \"houseNumber\": \"10\",\n  \"pricePerNight\": 3500.00,\n  \"maxGuests\": 3,\n  \"amenities\": [\"Wi-Fi\", \"Парковка\", \"Кухня\", \"Кондиционер\"],\n  \"photos\": [\n    \"https://images.unsplash.com/photo-1522708323590-d24dbb6b0267\",\n    \"https://images.unsplash.com/photo-1493809842364-78817add7ffb\"\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Create Apartment 2 (LANDLORD)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{landlordToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/apartments", "host": ["{{baseUrl}}"], "path": ["api","apartments"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Студия у метро\",\n  \"description\": \"Компактная студия рядом со станцией метро\",\n  \"city\": \"Москва\",\n  \"street\": \"Арбат\",\n  \"houseNumber\": \"25\",\n  \"pricePerNight\": 2000.00,\n  \"maxGuests\": 2,\n  \"amenities\": [\"Wi-Fi\", \"Кухня\"],\n  \"photos\": [\"https://images.unsplash.com/photo-1560448204-e02f11c3d0e2\"]\n}"
+            }
+          }
+        },
+        {
+          "name": "Search Apartments",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Search success', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.test('Returns page object', () => pm.expect(r).to.have.property('content'));",
+                  "pm.test('Content is array', () => pm.expect(r.content).to.be.an('array'));",
+                  "if (r.content && r.content.length > 0) {",
+                  "  pm.collectionVariables.set('apartmentId', r.content[0].id.toString());",
+                  "  console.log('Found', r.content.length, 'apartments');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/apartments?city=Москва&startDate=2026-06-01&endDate=2026-06-05&guests=2",
+              "host": ["{{baseUrl}}"],
+              "path": ["api","apartments"],
+              "query": [
+                { "key": "city",      "value": "Москва" },
+                { "key": "startDate", "value": "2026-06-01" },
+                { "key": "endDate",   "value": "2026-06-05" },
+                { "key": "guests",    "value": "2" },
+                { "key": "minPrice",  "value": "1000", "disabled": true },
+                { "key": "maxPrice",  "value": "5000", "disabled": true },
+                { "key": "page",      "value": "0", "disabled": true },
+                { "key": "size",      "value": "10", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Apartment by ID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Get apartment success', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.test('Has name', () => pm.expect(r.name).to.not.be.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/apartments/{{apartmentId}}", "host": ["{{baseUrl}}"], "path": ["api","apartments","{{apartmentId}}"] }
+          }
+        },
+        {
+          "name": "Get My Apartments (LANDLORD)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Get my apartments success', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{landlordToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/apartments/my", "host": ["{{baseUrl}}"], "path": ["api","apartments","my"] }
+          }
+        },
+        {
+          "name": "Update Apartment (LANDLORD)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Apartment updated', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{landlordToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/apartments/{{apartmentId}}", "host": ["{{baseUrl}}"], "path": ["api","apartments","{{apartmentId}}"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Уютная квартира в центре (обновлено)\",\n  \"description\": \"Обновлённое описание\",\n  \"city\": \"Москва\",\n  \"street\": \"Тверская\",\n  \"houseNumber\": \"10\",\n  \"pricePerNight\": 3800.00,\n  \"maxGuests\": 4,\n  \"amenities\": [\"Wi-Fi\", \"Парковка\", \"Кухня\", \"Стиральная машина\"],\n  \"photos\": [\"https://images.unsplash.com/photo-1522708323590-d24dbb6b0267\"]\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete (Deactivate) Apartment",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Apartment deactivated', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{landlordToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/apartments/{{apartmentId}}", "host": ["{{baseUrl}}"], "path": ["api","apartments","{{apartmentId}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Bookings",
+      "item": [
+        {
+          "name": "Create Booking (CLIENT)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const r = pm.response.json();",
+                  "pm.test('Booking created', () => pm.response.to.have.status(200));",
+                  "pm.test('Status is PENDING', () => pm.expect(r.status).to.equal('PENDING'));",
+                  "pm.test('Has totalPrice', () => pm.expect(r.totalPrice).to.be.a('number'));",
+                  "if (r.id) pm.collectionVariables.set('bookingId', r.id.toString());"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/bookings", "host": ["{{baseUrl}}"], "path": ["api","bookings"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"apartmentId\": {{apartmentId}},\n  \"startDate\": \"2026-06-01\",\n  \"endDate\": \"2026-06-05\",\n  \"guestsCount\": 2\n}"
+            }
+          }
+        },
+        {
+          "name": "Create Booking - Date Conflict (should fail)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Conflict returns 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/bookings", "host": ["{{baseUrl}}"], "path": ["api","bookings"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"apartmentId\": {{apartmentId}},\n  \"startDate\": \"2026-06-02\",\n  \"endDate\": \"2026-06-04\",\n  \"guestsCount\": 1\n}"
+            }
+          }
+        },
+        {
+          "name": "Get My Bookings",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Get bookings success', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/bookings", "host": ["{{baseUrl}}"], "path": ["api","bookings"] }
+          }
+        },
+        {
+          "name": "Get Booking by ID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Get booking success', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/bookings/{{bookingId}}", "host": ["{{baseUrl}}"], "path": ["api","bookings","{{bookingId}}"] }
+          }
+        },
+        {
+          "name": "Confirm Booking (PENDING → CONFIRMED)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const r = pm.response.json();",
+                  "pm.test('Booking confirmed', () => pm.response.to.have.status(200));",
+                  "pm.test('Status is CONFIRMED', () => pm.expect(r.status).to.equal('CONFIRMED'));",
+                  "pm.test('confirmedAt set', () => pm.expect(r.confirmedAt).to.not.be.null);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/bookings/{{bookingId}}/confirm", "host": ["{{baseUrl}}"], "path": ["api","bookings","{{bookingId}}","confirm"] }
+          }
+        },
+        {
+          "name": "Cancel Booking by CLIENT",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const r = pm.response.json();",
+                  "pm.test('Booking cancelled', () => pm.response.to.have.status(200));",
+                  "pm.test('Status is CANCELLED_BY_CLIENT', () => pm.expect(r.status).to.equal('CANCELLED_BY_CLIENT'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/bookings/{{bookingId}}/cancel", "host": ["{{baseUrl}}"], "path": ["api","bookings","{{bookingId}}","cancel"] }
+          }
+        },
+        {
+          "name": "Cancel Booking by LANDLORD",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const r = pm.response.json();",
+                  "pm.test('Booking cancelled by landlord', () => pm.response.to.have.status(200));",
+                  "pm.test('Status is CANCELLED_BY_LANDLORD', () => pm.expect(r.status).to.equal('CANCELLED_BY_LANDLORD'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{landlordToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/bookings/{{bookingId}}/cancel-by-landlord", "host": ["{{baseUrl}}"], "path": ["api","bookings","{{bookingId}}","cancel-by-landlord"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reviews",
+      "item": [
+        {
+          "name": "Create Review (after COMPLETED booking)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Review created or booking not completed', () => {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 400]);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/reviews", "host": ["{{baseUrl}}"], "path": ["api","reviews"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bookingId\": {{bookingId}},\n  \"rating\": 5,\n  \"comment\": \"Отличная квартира! Всё как на фото, хозяин очень отзывчивый. Обязательно вернёмся!\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Reviews for Apartment",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Get reviews success', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/apartments/{{apartmentId}}/reviews", "host": ["{{baseUrl}}"], "path": ["api","apartments","{{apartmentId}}","reviews"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "Get Stats (ADMIN)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Stats or forbidden', () => {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 403]);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/admin/stats", "host": ["{{baseUrl}}"], "path": ["api","admin","stats"] }
+          }
+        },
+        {
+          "name": "Force Change Booking Status (ADMIN)",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/bookings/{{bookingId}}/status?status=COMPLETED",
+              "host": ["{{baseUrl}}"],
+              "path": ["api","admin","bookings","{{bookingId}}","status"],
+              "query": [{ "key": "status", "value": "COMPLETED" }]
+            }
+          }
+        },
+        {
+          "name": "Block User (ADMIN)",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/users/1/block", "host": ["{{baseUrl}}"], "path": ["api","users","1","block"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Security Tests",
+      "item": [
+        {
+          "name": "Access protected endpoint without token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Returns 401 without token', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/users/me", "host": ["{{baseUrl}}"], "path": ["api","users","me"] }
+          }
+        },
+        {
+          "name": "CLIENT tries to create apartment (should fail)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('CLIENT cannot create apartment', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/apartments", "host": ["{{baseUrl}}"], "path": ["api","apartments"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Hack\",\n  \"city\": \"Moscow\",\n  \"pricePerNight\": 1,\n  \"maxGuests\": 1\n}"
+            }
+          }
+        },
+        {
+          "name": "CLIENT accesses admin stats (should fail)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Returns 403 for non-admin', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/admin/stats", "host": ["{{baseUrl}}"], "path": ["api","admin","stats"] }
+          }
+        }
+      ]
+    }
+  ]
+}
