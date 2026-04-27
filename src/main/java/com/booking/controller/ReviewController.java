@@ -14,6 +14,21 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+/**
+ * Контроллер отзывов.
+ *
+ * Особенность: эндпоинты расположены на ДВУХ базовых путях:
+ *   /api/reviews            — создание и удаление отзывов
+ *   /api/apartments/{id}/reviews — получение отзывов квартиры
+ *
+ * Поэтому @RequestMapping на уровне класса не используется,
+ * а полные пути прописаны в каждом @PostMapping / @GetMapping / @DeleteMapping.
+ *
+ * Матрица доступа:
+ *   POST /api/reviews                          — только CLIENT (только после COMPLETED брони)
+ *   GET /api/apartments/{apartmentId}/reviews  — публичный (без токена)
+ *   DELETE /api/reviews/{id}                   — только ADMIN
+ */
 @RestController
 @RequiredArgsConstructor
 @Tag(name = "Reviews")
@@ -21,6 +36,11 @@ public class ReviewController {
 
     private final ReviewService reviewService;
 
+    /**
+     * POST /api/reviews
+     * Создаёт отзыв к завершённой брони.
+     * Условия (проверяются в сервисе): бронь COMPLETED, отзыва ещё нет, текущий = клиент.
+     */
     @PostMapping("/api/reviews")
     @PreAuthorize("hasRole('CLIENT')")
     @SecurityRequirement(name = "bearerAuth")
@@ -29,12 +49,22 @@ public class ReviewController {
         return ResponseEntity.ok(reviewService.create(request));
     }
 
+    /**
+     * GET /api/apartments/{apartmentId}/reviews
+     * Список всех отзывов к квартире. Публичный — без токена.
+     * URL намеренно вложен в /api/apartments — семантически отзывы принадлежат квартире.
+     */
     @GetMapping("/api/apartments/{apartmentId}/reviews")
     @Operation(summary = "Get reviews for apartment")
     public ResponseEntity<List<ReviewResponse>> getByApartment(@PathVariable Long apartmentId) {
         return ResponseEntity.ok(reviewService.getByApartment(apartmentId));
     }
 
+    /**
+     * DELETE /api/reviews/{id}
+     * Удаляет отзыв. Только ADMIN может удалять чужие отзывы (модерация).
+     * После удаления автоматически пересчитывается рейтинг квартиры.
+     */
     @DeleteMapping("/api/reviews/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     @SecurityRequirement(name = "bearerAuth")

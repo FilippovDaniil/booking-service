@@ -12,10 +12,25 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
+/**
+ * Репозиторий квартир.
+ * Ключевой метод — findAvailable: поиск свободных квартир с фильтрацией.
+ */
 public interface ApartmentRepository extends JpaRepository<Apartment, Long> {
 
+    /** Возвращает все квартиры арендодателя (включая неактивные). */
     List<Apartment> findByLandlord(User landlord);
 
+    /**
+     * Поиск доступных квартир с фильтрацией по городу, датам, гостям и цене.
+     *
+     * Логика «свободная квартира»:
+     *   NOT EXISTS subquery — нет активных броней (CONFIRMED/PENDING), пересекающихся с запрошенным периодом.
+     *   Условие пересечения: bron.start < запрос.end AND bron.end > запрос.start
+     *
+     * :minPrice IS NULL / :maxPrice IS NULL — позволяет передавать null для игнорирования фильтра цены.
+     * Pageable — поддерживает пагинацию и сортировку на уровне SQL (LIMIT/OFFSET).
+     */
     @Query("""
             SELECT a FROM Apartment a
             WHERE a.active = true

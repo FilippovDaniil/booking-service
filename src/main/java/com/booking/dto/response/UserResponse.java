@@ -6,6 +6,15 @@ import lombok.Data;
 
 import java.time.LocalDateTime;
 
+/**
+ * DTO ответа с данными пользователя.
+ *
+ * Намеренно НЕ содержит поле password — никогда не отдаём хэш пароля клиенту.
+ * Это пример принципа «минимального раскрытия данных» (principle of least privilege).
+ *
+ * Статический фабричный метод from(User) — стандартный паттерн маппинга Entity → DTO.
+ * Альтернативы: MapStruct, ModelMapper — но для учебного проекта ручной маппинг нагляднее.
+ */
 @Data
 public class UserResponse {
     private Long id;
@@ -13,9 +22,13 @@ public class UserResponse {
     private String firstName;
     private String lastName;
     private Role role;
-    private boolean enabled;
+    private boolean enabled;       // false = аккаунт заблокирован
     private LocalDateTime createdAt;
 
+    /**
+     * Преобразует Entity User в DTO UserResponse.
+     * Вызывается из сервисов: UserResponse.from(user).
+     */
     public static UserResponse from(User user) {
         UserResponse r = new UserResponse();
         r.setId(user.getId());

@@ -8,21 +8,35 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
+/**
+ * DTO ответа с данными бронирования.
+ *
+ * Объединяет данные из трёх Entity: Booking, User (client), Apartment.
+ * Вместо вложенных объектов — плоская структура с ID и именами.
+ * Это избавляет клиента от необходимости делать дополнительные запросы.
+ *
+ * confirmedAt — null пока бронь не подтверждена, заполняется при confirm().
+ */
 @Data
 public class BookingResponse {
     private Long id;
     private Long clientId;
-    private String clientName;
+    private String clientName;       // firstName + lastName клиента
     private Long apartmentId;
     private String apartmentName;
     private LocalDate startDate;
     private LocalDate endDate;
     private int guestsCount;
-    private BigDecimal totalPrice;
+    private BigDecimal totalPrice;   // рассчитан при создании: ночи × pricePerNight
     private BookingStatus status;
     private LocalDateTime createdAt;
-    private LocalDateTime confirmedAt;
+    private LocalDateTime confirmedAt; // null до подтверждения
 
+    /**
+     * Маппинг Entity Booking → DTO BookingResponse.
+     * Обращается к b.getClient() и b.getApartment() — убедитесь что вызывается в транзакции,
+     * иначе получите LazyInitializationException на LAZY-связях.
+     */
     public static BookingResponse from(Booking b) {
         BookingResponse r = new BookingResponse();
         r.setId(b.getId());

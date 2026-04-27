@@ -20,6 +20,15 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * Сервис отзывов.
+ *
+ * Правила:
+ *  - Отзыв может оставить только CLIENT, только после завершённой брони (COMPLETED).
+ *  - Один отзыв на одно бронирование (уникальность на уровне БД и кода).
+ *  - После добавления/удаления отзыва пересчитывается averageRating квартиры.
+ *  - Удалять отзывы может только ADMIN.
+ */
 @Service
 @RequiredArgsConstructor
 public class ReviewService {
@@ -29,6 +38,10 @@ public class ReviewService {
     private final ApartmentRepository apartmentRepository;
     private final SecurityUtils securityUtils;
 
+    /**
+     * Создаёт отзыв.
+     * Проверяет: бронь принадлежит текущему пользователю, статус COMPLETED, отзыв ещё не был оставлен.
+     */
     @Transactional
     public ReviewResponse create(ReviewRequest request) {
         User client = securityUtils.getCurrentUser();
@@ -52,27 +65,36 @@ public class ReviewService {
                 .build();
         review = reviewRepository.save(review);
 
-        // Update apartment average rating
+        // Пересчитываем средний рейтинг квартиры после добавления нового отзыва
         updateApartmentRating(booking.getApartment().getId());
 
         return ReviewResponse.from(review);
     }
 
+    /** Возвращает все отзывы для квартиры (через JOIN на booking → apartment). */
     public List<ReviewResponse> getByApartment(Long apartmentId) {
         return reviewRepository.findByApartmentId(apartmentId).stream()
                 .map(ReviewResponse::from)
                 .collect(Collectors.toList());
     }
 
+    /**
+     * Удаляет отзыв (только ADMIN).
+     * После удаления пересчитывает средний рейтинг квартиры.
+     */
     @Transactional
     public void deleteReview(Long id) {
         Review review = reviewRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Review not found"));
         Long apartmentId = review.getBooking().getApartment().getId();
         reviewRepository.delete(review);
-        updateApartmentRating(apartmentId);
+        updateApartmentRating(apartmentId); // рейтинг может упасть или стать 0
     }
 
+    /**
+     * Пересчитывает и сохраняет средний рейтинг квартиры.
+     * AVG возвращает null, если отзывов нет — в этом случае ставим 0.
+     */
     private void updateApartmentRating(Long apartmentId) {
         Double avg = reviewRepository.calculateAverageRating(apartmentId);
         apartmentRepository.findById(apartmentId).ifPresent(a -> {

@@ -1,0 +1,220 @@
+# ============================================================
+#  GitLab CI/CD — Booking Service
+#
+#  ЧТО ТАКОЕ GitLab CI/CD:
+#    CI (Continuous Integration) — каждый push автоматически
+#    запускает сборку и тесты. Если тесты упали — merge запрещён.
+#
+#    CD (Continuous Delivery/Deployment) — после успешного CI
+#    приложение автоматически деплоится на сервер.
+#
+#  КАК РАБОТАЕТ ЭТОТ ФАЙЛ:
+#    GitLab читает .gitlab-ci.yml из корня репозитория.
+#    При каждом push он запускает "pipeline" — цепочку "stages".
+#    Каждый stage содержит один или несколько "jobs".
+#    Jobs в одном stage выполняются параллельно.
+#    Если job упал — следующие stages не выполняются.
+#
+#  STAGES В ЭТОМ PIPELINE:
+#    build  → компилируем код и скачиваем зависимости
+#    test   → запускаем все 82 теста
+#    package → собираем исполняемый JAR-файл
+#    docker → собираем Docker-образ и публикуем в registry
+#    deploy → деплоим на сервер через docker-compose
+#
+#  ПЕРЕМЕННЫЕ (Variables):
+#    Секретные значения (пароли, токены) хранятся в GitLab:
+#    Settings → CI/CD → Variables — НЕ пишем их прямо в этом файле!
+# ============================================================
+
+# Глобальные переменные — доступны во всех jobs
+variables:
+  # Имя Docker-образа (используется в stage docker и deploy)
+  IMAGE_NAME: $CI_REGISTRY_IMAGE/booking-service
+  IMAGE_TAG: $CI_COMMIT_SHORT_SHA   # уникальный тег = первые 8 символов commit hash
+
+  # Настройки Gradle-кэша
+  GRADLE_USER_HOME: "$CI_PROJECT_DIR/.gradle"
+
+  # Отключаем daemon Gradle в CI (он не нужен в короткоживущих контейнерах)
+  GRADLE_OPTS: "-Dorg.gradle.daemon=false"
+
+# Порядок выполнения стадий
+stages:
+  - build      # компиляция
+  - test       # тесты
+  - package    # сборка JAR
+  - docker     # Docker-образ
+  - deploy     # деплой
+
+# ============================================================
+#  КЭШИРОВАНИЕ
+#  Gradle скачивает зависимости (~200 МБ) при первом запуске.
+#  Кэшируем папку .gradle чтобы при следующих запусках не скачивать заново.
+#  key: files["build.gradle"] — кэш инвалидируется только при изменении build.gradle
+# ============================================================
+.gradle_cache: &gradle_cache
+  cache:
+    key:
+      files:
+        - build.gradle
+    paths:
+      - .gradle/
+      - build/
+
+# ============================================================
+#  STAGE: build
+#  Компилируем Java-код. Если есть ошибки компиляции — pipeline останавливается.
+#  compileJava + compileTestJava — проверяем оба источника.
+# ============================================================
+build:
+  stage: build
+  image: gradle:8.7-jdk17   # официальный образ с Java 17 и Gradle 8.7
+  <<: *gradle_cache
+  script:
+    - echo "==> Компиляция проекта..."
+    - ./gradlew compileJava compileTestJava --no-daemon
+  artifacts:
+    # Сохраняем скомпилированные классы для следующего stage (test)
+    paths:
+      - build/classes/
+    expire_in: 1 hour   # артефакты живут 1 час — достаточно для pipeline
+
+# ============================================================
+#  STAGE: test
+#  Запускаем все 82 теста.
+#
+#  Тесты используют H2 in-memory — PostgreSQL/Redis/Kafka не нужны.
+#  Флаг --continue — не останавливаться на первом упавшем тесте,
+#  собрать все отчёты.
+#
+#  JUnit XML отчёты сохраняются как artifacts → GitLab отображает
+#  результаты тестов прямо в интерфейсе (Pipelines → Tests).
+# ============================================================
+test:
+  stage: test
+  image: gradle:8.7-jdk17
+  <<: *gradle_cache
+  script:
+    - echo "==> Запуск тестов..."
+    - ./gradlew test --no-daemon --continue
+  artifacts:
+    when: always   # сохраняем отчёты даже если тесты упали
+    reports:
+      junit: build/test-results/test/**/*.xml   # GitLab читает JUnit XML
+    paths:
+      - build/reports/tests/   # HTML-отчёт Gradle (красивые страницы)
+    expire_in: 7 days
+  # Покрытие кода — GitLab парсит вывод Gradle и показывает % в интерфейсе
+  # (требует плагина JaCoCo в build.gradle, опционально)
+  coverage: '/Total.*?([0-9]{1,3})%/'
+
+# ============================================================
+#  STAGE: package
+#  Собираем исполняемый "fat JAR" — один файл со всеми зависимостями внутри.
+#  bootJar — Spring Boot task, создаёт JAR в build/libs/booking-service-1.0-SNAPSHOT.jar
+#
+#  Запускается только на ветке main/master (не для feature-веток).
+# ============================================================
+package:
+  stage: package
+  image: gradle:8.7-jdk17
+  <<: *gradle_cache
+  script:
+    - echo "==> Сборка JAR..."
+    - ./gradlew bootJar --no-daemon
+    - echo "==> JAR собран:"
+    - ls -lh build/libs/
+  artifacts:
+    paths:
+      - build/libs/*.jar
+    expire_in: 1 week
+  # Выполняем только на main-ветке (деплоим только стабильный код)
+  only:
+    - main
+    - master
+
+# ============================================================
+#  STAGE: docker
+#  Собираем Docker-образ из Dockerfile и публикуем в GitLab Container Registry.
+#
+#  $CI_REGISTRY         — адрес registry вашего GitLab (например registry.gitlab.com)
+#  $CI_REGISTRY_USER    — логин (заполняется GitLab автоматически)
+#  $CI_REGISTRY_PASSWORD — пароль (заполняется GitLab автоматически)
+#  $CI_REGISTRY_IMAGE   — полный путь к образу вашего проекта
+#  $CI_COMMIT_SHORT_SHA — короткий хэш коммита (тег для версионирования)
+#
+#  Тегируем образ двумя тегами:
+#    - хэш коммита (точная версия для rollback)
+#    - "latest" (для docker-compose pull)
+# ============================================================
+docker-build:
+  stage: docker
+  image: docker:24           # используем образ с Docker CLI
+  services:
+    - docker:24-dind         # Docker-in-Docker: запускает Docker-демон внутри CI
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  before_script:
+    # Логинимся в GitLab Container Registry
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+  script:
+    - echo "==> Сборка Docker-образа..."
+    - docker build -t "$IMAGE_NAME:$IMAGE_TAG" -t "$IMAGE_NAME:latest" .
+    - echo "==> Публикация образа в registry..."
+    - docker push "$IMAGE_NAME:$IMAGE_TAG"
+    - docker push "$IMAGE_NAME:latest"
+  only:
+    - main
+    - master
+  needs:
+    - package   # ждём пока соберётся JAR (нужен для Dockerfile)
+
+# ============================================================
+#  STAGE: deploy
+#  Деплоим на сервер через SSH.
+#
+#  ТРЕБОВАНИЯ:
+#    1. В GitLab Variables добавить:
+#       - DEPLOY_HOST — IP или hostname сервера
+#       - DEPLOY_USER — SSH-пользователь (например deploy или ubuntu)
+#       - SSH_PRIVATE_KEY — приватный SSH-ключ (без пароля)
+#    2. Публичный ключ добавить на сервер в ~/.ssh/authorized_keys
+#
+#  ЧТО ПРОИСХОДИТ:
+#    1. Подключаемся к серверу по SSH
+#    2. Скачиваем свежий Docker-образ из registry
+#    3. Перезапускаем сервис через docker-compose
+# ============================================================
+deploy:
+  stage: deploy
+  image: alpine:3.19
+  before_script:
+    # Устанавливаем SSH-клиент (alpine не имеет его по умолчанию)
+    - apk add --no-cache openssh-client
+    # Сохраняем приватный ключ из GitLab Variables
+    - mkdir -p ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa  # обязательно! SSH откажет если права шире
+    # Отключаем проверку host fingerprint (иначе первое подключение зависнет)
+    - echo "StrictHostKeyChecking no" >> /etc/ssh/ssh_config
+  script:
+    - echo "==> Деплой на сервер $DEPLOY_HOST..."
+    - |
+      ssh "$DEPLOY_USER@$DEPLOY_HOST" "
+        cd /opt/booking-service &&
+        docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY &&
+        docker pull $IMAGE_NAME:latest &&
+        docker-compose up -d --no-deps --build app &&
+        echo 'Деплой завершён!'
+      "
+  environment:
+    name: production
+    url: http://$DEPLOY_HOST:8555
+  only:
+    - main
+    - master
+  needs:
+    - docker-build
+  # Ручное подтверждение перед деплоем (защита от случайного деплоя)
+  when: manual

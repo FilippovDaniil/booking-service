@@ -27,6 +27,20 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * Основной сервис бронирований.
+ *
+ * Жизненный цикл брони:
+ *   PENDING → (подтверждение клиентом) → CONFIRMED
+ *   PENDING → (истёк 15 мин) → EXPIRED  (планировщик)
+ *   PENDING/CONFIRMED → (отмена клиентом) → CANCELLED_BY_CLIENT
+ *   PENDING/CONFIRMED → (отмена арендодателем) → CANCELLED_BY_LANDLORD
+ *   CONFIRMED → (дата выезда прошла) → COMPLETED  (планировщик)
+ *
+ * Защита от двойного бронирования:
+ *   BookingRepository.findConflictingBookings использует PESSIMISTIC_WRITE lock,
+ *   чтобы не допустить одновременного создания двух броней на одни и те же даты.
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -37,6 +51,12 @@ public class BookingService {
     private final SecurityUtils securityUtils;
     private final BookingEventPublisher eventPublisher;
 
+    /**
+     * Создаёт новое бронирование со статусом PENDING.
+     * Проверяет: квартира активна, клиент не является её владельцем,
+     * количество гостей не превышает лимит, даты корректны, нет пересечений.
+     * Цена рассчитывается: количество ночей × цена за ночь.
+     */
     @Transactional
     public BookingResponse create(BookingRequest request) {
         User client = securityUtils.getCurrentUser();
@@ -55,13 +75,15 @@ public class BookingService {
             throw new InvalidOperationException("End date must be after start date");
         }
 
-        // Pessimistic lock check for date conflicts
+        // Пессимистическая блокировка: другие транзакции не смогут создать конфликтующую бронь
+        // пока эта транзакция не завершится
         List<Booking> conflicts = bookingRepository.findConflictingBookings(
                 apartment, request.getStartDate(), request.getEndDate());
         if (!conflicts.isEmpty()) {
             throw new BookingConflictException("Apartment is already booked for these dates");
         }
 
+        // ChronoUnit.DAYS считает количество ночей между датами
         long nights = ChronoUnit.DAYS.between(request.getStartDate(), request.getEndDate());
         BigDecimal totalPrice = apartment.getPricePerNight().multiply(BigDecimal.valueOf(nights));
 
@@ -77,10 +99,12 @@ public class BookingService {
 
         booking = bookingRepository.save(booking);
 
+        // Публикуем событие в Kafka (другие сервисы могут подписаться)
         eventPublisher.publishBookingEvent(new BookingEvent(
                 booking.getId(), client.getId(), apartment.getId(),
                 BookingEvent.EventType.CREATED, BookingStatus.PENDING));
 
+        // Отправляем уведомление клиенту (через Kafka → NotificationService)
         eventPublisher.publishNotification(new NotificationEvent(
                 client.getId(),
                 "Booking created",
@@ -89,6 +113,10 @@ public class BookingService {
         return BookingResponse.from(booking);
     }
 
+    /**
+     * Клиент подтверждает бронирование (PENDING → CONFIRMED).
+     * Только владелец брони может подтвердить, и только если статус PENDING.
+     */
     @Transactional
     public BookingResponse confirm(Long id) {
         Booking booking = getBooking(id);
@@ -102,7 +130,7 @@ public class BookingService {
         }
 
         booking.setStatus(BookingStatus.CONFIRMED);
-        booking.setConfirmedAt(LocalDateTime.now());
+        booking.setConfirmedAt(LocalDateTime.now()); // фиксируем время подтверждения
         booking = bookingRepository.save(booking);
 
         eventPublisher.publishBookingEvent(new BookingEvent(
@@ -112,6 +140,10 @@ public class BookingService {
         return BookingResponse.from(booking);
     }
 
+    /**
+     * Клиент отменяет бронь (PENDING/CONFIRMED → CANCELLED_BY_CLIENT).
+     * Нельзя отменить бронь, которая уже началась (startDate в прошлом).
+     */
     @Transactional
     public BookingResponse cancelByClient(Long id) {
         Booking booking = getBooking(id);
@@ -137,6 +169,11 @@ public class BookingService {
         return BookingResponse.from(booking);
     }
 
+    /**
+     * Арендодатель отменяет бронь (PENDING/CONFIRMED → CANCELLED_BY_LANDLORD).
+     * Только владелец квартиры может отменить её бронирование.
+     * Клиент получает уведомление об отмене.
+     */
     @Transactional
     public BookingResponse cancelByLandlord(Long id) {
         Booking booking = getBooking(id);
@@ -167,6 +204,10 @@ public class BookingService {
         return BookingResponse.from(booking);
     }
 
+    /**
+     * Возвращает бронь по ID с проверкой прав доступа.
+     * Видеть бронь могут: клиент, арендодатель квартиры, администратор.
+     */
     public BookingResponse getById(Long id) {
         Booking booking = getBooking(id);
         User current = securityUtils.getCurrentUser();
@@ -181,6 +222,12 @@ public class BookingService {
         return BookingResponse.from(booking);
     }
 
+    /**
+     * Возвращает список броней в зависимости от роли:
+     *  CLIENT   — только свои брони
+     *  LANDLORD — брони на его квартиры
+     *  ADMIN    — все брони системы
+     */
     public List<BookingResponse> getMyBookings() {
         User current = securityUtils.getCurrentUser();
         return switch (current.getRole()) {
@@ -193,7 +240,11 @@ public class BookingService {
         };
     }
 
-    // Called by scheduler — no auth context
+    /**
+     * Вызывается планировщиком каждые 30 секунд.
+     * Переводит в EXPIRED все PENDING-брони, созданные раньше порогового времени.
+     * Не использует SecurityContext — выполняется без HTTP-запроса.
+     */
     @Transactional
     public void expirePendingBookings(LocalDateTime threshold) {
         List<Booking> expired = bookingRepository.findExpiredPendingBookings(threshold);
@@ -213,6 +264,10 @@ public class BookingService {
         }
     }
 
+    /**
+     * Вызывается планировщиком в 1:00 ночи.
+     * Переводит в COMPLETED все CONFIRMED-брони, дата выезда которых уже прошла.
+     */
     @Transactional
     public void completeFinishedBookings(LocalDate today) {
         List<Booking> toComplete = bookingRepository.findCompletedBookings(today);
@@ -227,6 +282,7 @@ public class BookingService {
         }
     }
 
+    /** Внутренний метод: загружает бронь или бросает 404. */
     private Booking getBooking(Long id) {
         return bookingRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Booking not found: " + id));

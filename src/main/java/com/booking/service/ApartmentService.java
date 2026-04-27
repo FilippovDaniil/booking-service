@@ -20,6 +20,13 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * Сервис управления квартирами.
+ *
+ * Создание/редактирование — только LANDLORD, только своих квартир.
+ * Удаление (мягкое: active = false) — LANDLORD (своей) или ADMIN (любой).
+ * Поиск доступных квартир — открытый, без авторизации (вызывается напрямую из контроллера).
+ */
 @Service
 @RequiredArgsConstructor
 public class ApartmentService {
@@ -27,6 +34,7 @@ public class ApartmentService {
     private final ApartmentRepository apartmentRepository;
     private final SecurityUtils securityUtils;
 
+    /** Создаёт квартиру; текущий пользователь автоматически становится арендодателем. */
     @Transactional
     public ApartmentResponse create(ApartmentRequest request) {
         User landlord = securityUtils.getCurrentUser();
@@ -46,9 +54,10 @@ public class ApartmentService {
         return ApartmentResponse.from(apartmentRepository.save(apartment));
     }
 
+    /** Обновляет квартиру; проверяет, что текущий пользователь — её владелец. */
     @Transactional
     public ApartmentResponse update(Long id, ApartmentRequest request) {
-        Apartment apartment = getOwnedApartment(id);
+        Apartment apartment = getOwnedApartment(id); // бросит 403, если не владелец
         apartment.setName(request.getName());
         apartment.setDescription(request.getDescription());
         apartment.setCity(request.getCity());
@@ -61,6 +70,11 @@ public class ApartmentService {
         return ApartmentResponse.from(apartmentRepository.save(apartment));
     }
 
+    /**
+     * Мягкое удаление: active = false.
+     * Квартира остаётся в БД, исторические брони сохраняются.
+     * ADMIN может деактивировать любую квартиру, LANDLORD — только свою.
+     */
     @Transactional
     public void delete(Long id) {
         Apartment apartment = findById(id);
@@ -76,6 +90,7 @@ public class ApartmentService {
         return ApartmentResponse.from(findById(id));
     }
 
+    /** Возвращает все квартиры текущего арендодателя (включая неактивные). */
     public List<ApartmentResponse> getMyApartments() {
         User landlord = securityUtils.getCurrentUser();
         return apartmentRepository.findByLandlord(landlord).stream()
@@ -83,6 +98,11 @@ public class ApartmentService {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * Поиск доступных квартир с пагинацией.
+     * Делегирует в JPQL-запрос репозитория, который исключает квартиры
+     * с пересекающимися активными бронями (CONFIRMED/PENDING).
+     */
     public Page<ApartmentResponse> search(String city, LocalDate startDate, LocalDate endDate,
                                           int guests, BigDecimal minPrice, BigDecimal maxPrice,
                                           Pageable pageable) {
@@ -91,11 +111,13 @@ public class ApartmentService {
                 .map(ApartmentResponse::from);
     }
 
+    /** Загружает квартиру по ID или бросает ResourceNotFoundException (404). */
     public Apartment findById(Long id) {
         return apartmentRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Apartment not found: " + id));
     }
 
+    /** Загружает квартиру и проверяет, что текущий пользователь — её владелец. */
     private Apartment getOwnedApartment(Long id) {
         Apartment apartment = findById(id);
         User current = securityUtils.getCurrentUser();

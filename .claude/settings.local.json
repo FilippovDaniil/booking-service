@@ -18,7 +18,11 @@
       "Bash(curl -s -X POST http://localhost:8081/api/auth/register -H 'Content-Type: application/json' -d '{\"email\":\"landlord@test.com\",\"password\":\"pass1234\",\"firstName\":\"Petr\",\"lastName\":\"Sidorov\",\"role\":\"LANDLORD\"}')",
       "Bash(curl -s -X POST http://localhost:8555/api/auth/register -H 'Content-Type: application/json' -d '{\"email\":\"client@test.com\",\"password\":\"pass1234\",\"firstName\":\"Ivan\",\"lastName\":\"Petrov\",\"role\":\"CLIENT\"}')",
       "Bash(curl -s -X POST http://localhost:8555/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"client@test.com\",\"password\":\"pass1234\"}')",
-      "Bash(start \"\" \"C:\\\\Users\\\\MaxxPC\\\\IdeaProjects\\\\Pet_Booking\\\\frontend\\\\index.html\")"
+      "Bash(start \"\" \"C:\\\\Users\\\\MaxxPC\\\\IdeaProjects\\\\Pet_Booking\\\\frontend\\\\index.html\")",
+      "Bash(./gradlew test *)",
+      "Bash(grep -v \"^$\")",
+      "Bash(xargs grep *)",
+      "Bash(awk -F'\"' '{s+=$2}END{print \"Total tests: \"s}')"
     ]
   }
 }

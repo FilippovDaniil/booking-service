@@ -17,28 +17,58 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 
+/**
+ * Контроллер административных операций.
+ * Все методы требуют роль ADMIN — задано на уровне класса через @PreAuthorize.
+ *
+ * Особенность архитектуры: этот контроллер работает напрямую с репозиториями,
+ * минуя сервисный слой. Это допустимо для простых административных операций,
+ * не требующих сложной бизнес-логики (например, принудительная смена статуса).
+ * В более строгой архитектуре лучше завести AdminService.
+ *
+ * @PreAuthorize на уровне класса = все методы требуют hasRole('ADMIN').
+ * Это эквивалентно навешиванию @PreAuthorize на каждый метод отдельно.
+ */
 @RestController
 @RequestMapping("/api/admin")
-@PreAuthorize("hasRole('ADMIN')")
+@PreAuthorize("hasRole('ADMIN')") // применяется ко ВСЕМ методам этого контроллера
 @RequiredArgsConstructor
 @Tag(name = "Admin")
 @SecurityRequirement(name = "bearerAuth")
 public class AdminController {
 
+    // Прямые репозитории для сбора статистики — не нужно создавать сервисы ради count()
     private final UserRepository userRepository;
     private final ApartmentRepository apartmentRepository;
     private final BookingRepository bookingRepository;
 
+    /**
+     * GET /api/admin/stats
+     * Возвращает общую статистику системы: количество пользователей, квартир и броней.
+     *
+     * Map.of() — неизменяемый Map, создаётся на месте.
+     * Jackson сериализует Map<String, Long> в JSON-объект: { "totalUsers": 42, ... }
+     */
     @GetMapping("/stats")
     @Operation(summary = "Get system statistics")
     public ResponseEntity<Map<String, Long>> getStats() {
         return ResponseEntity.ok(Map.of(
-                "totalUsers", userRepository.count(),
-                "totalApartments", apartmentRepository.count(),
-                "totalBookings", bookingRepository.count()
+                "totalUsers",      userRepository.count(),      // SELECT COUNT(*) FROM users
+                "totalApartments", apartmentRepository.count(), // SELECT COUNT(*) FROM apartments
+                "totalBookings",   bookingRepository.count()    // SELECT COUNT(*) FROM bookings
         ));
     }
 
+    /**
+     * PUT /api/admin/bookings/{id}/status?status=COMPLETED
+     * Принудительно меняет статус брони. Только для администраторов.
+     *
+     * @RequestParam BookingStatus status — Spring автоматически преобразует строку
+     * из query-параметра в enum-значение (например, "CONFIRMED" → BookingStatus.CONFIRMED).
+     *
+     * Используется в экстренных ситуациях: исправить застрявшую бронь,
+     * перевести вручную, обойти ограничения бизнес-логики.
+     */
     @PutMapping("/bookings/{id}/status")
     @Operation(summary = "Force-change booking status")
     public ResponseEntity<BookingResponse> changeBookingStatus(

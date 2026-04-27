@@ -7,11 +7,19 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
+/**
+ * Событие изменения статуса бронирования.
+ * Публикуется в Kafka-топик "booking-lifecycle" при каждом изменении статуса.
+ *
+ * Другие микросервисы (аналитика, нотификации и т.д.) могут подписаться
+ * на этот топик для реагирования на события без прямой связи с этим сервисом.
+ */
 @Data
-@NoArgsConstructor
+@NoArgsConstructor   // нужен Jackson для десериализации из Kafka
 @AllArgsConstructor
 public class BookingEvent {
 
+    /** Тип события соответствует переходу статуса бронирования. */
     public enum EventType {
         CREATED, CONFIRMED, CANCELLED, EXPIRED, COMPLETED
     }
@@ -20,9 +28,10 @@ public class BookingEvent {
     private Long clientId;
     private Long apartmentId;
     private EventType eventType;
-    private BookingStatus newStatus;
-    private LocalDateTime occurredAt;
+    private BookingStatus newStatus; // статус ПОСЛЕ изменения
+    private LocalDateTime occurredAt; // время наступления события
 
+    /** Основной конструктор: время события выставляется автоматически. */
     public BookingEvent(Long bookingId, Long clientId, Long apartmentId,
                         EventType eventType, BookingStatus newStatus) {
         this.bookingId = bookingId;
