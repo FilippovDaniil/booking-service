@@ -62,7 +62,7 @@
 | Тесты | **JUnit 5 + Mockito + AssertJ + H2** | Юнит-тесты с моками; интеграционные — с H2 вместо PostgreSQL |
 | Логирование | **Logback + Loki4j** | Структурированные логи с отправкой в Loki |
 | Мониторинг | **Grafana + Loki** | Визуализация и поиск по логам |
-| Контейнеризация | **Docker + Docker Compose** | Одна команда поднимает всю инфраструктуру |
+| Контейнеризация | **Docker + Docker Compose** | Одна команда поднимает всё: приложение + БД + Kafka + мониторинг |
 | CI/CD | **GitLab CI** | Автоматические сборка, тесты, деплой |
 
 ---
@@ -514,7 +514,7 @@ booking-service/
 ├── frontend/                            ← статичные HTML-страницы
 ├── postman_tests/                       ← коллекция Postman для ручного тестирования
 ├── Dockerfile                           ← сборка Docker-образа приложения
-├── docker-compose.yml                   ← локальная разработка (PostgreSQL + Redis + Kafka + Loki + Grafana)
+├── docker-compose.yml                   ← полный запуск: приложение + PostgreSQL + Redis + Kafka + Loki + Grafana
 ├── docker-compose.prod.yml              ← продакшн деплой
 ├── .gitlab-ci.yml                       ← CI/CD pipeline
 ├── build.gradle                         ← зависимости и настройки сборки Gradle
@@ -530,9 +530,10 @@ booking-service/
 
 | Инструмент | Версия | Зачем |
 |------------|--------|-------|
-| Java JDK | 17+ | Компиляция и запуск приложения |
-| Docker Desktop | Любая | Запуск PostgreSQL, Redis, Kafka |
+| Docker Desktop | Любая | Сборка образа и запуск всех контейнеров |
 | Git | Любая | Клонирование репозитория |
+
+> Java JDK устанавливать не нужно — приложение собирается внутри Docker.
 
 ### Шаг 1 — Клонировать проект
 
@@ -541,16 +542,17 @@ git clone https://gitlab.com/your-username/booking-service.git
 cd booking-service
 ```
 
-### Шаг 2 — Запустить инфраструктуру
+### Шаг 2 — Запустить всё одной командой
 
 ```bash
 docker-compose up -d
 ```
 
-Эта команда поднимет контейнеры:
+Docker соберёт образ приложения и поднимет все контейнеры:
 
 | Контейнер | Порт | Что это |
 |-----------|------|---------|
+| `booking-app` | **8555** | Spring Boot приложение |
 | `booking-postgres` | 5432 | База данных PostgreSQL |
 | `booking-redis` | 6379 | Кэш для refresh-токенов |
 | `booking-zookeeper` | 2181 | Координатор кластера Kafka |
@@ -558,29 +560,20 @@ docker-compose up -d
 | `booking-loki` | 3100 | Сервер логов |
 | `booking-grafana` | 3000 | Визуализация логов |
 
-Проверить статус:
+Первый запуск занимает больше времени — Docker скачивает базовые образы и собирает JAR (~2-5 минут).  
+Hibernate автоматически создаст все таблицы в PostgreSQL при старте приложения (`ddl-auto: update`).
+
+Проверить статус контейнеров:
 ```bash
 docker-compose ps
 ```
 
-### Шаг 3 — Запустить приложение
-
-**Через Gradle (терминал):**
+Посмотреть логи приложения:
 ```bash
-# Linux / macOS
-./gradlew bootRun
-
-# Windows
-gradlew.bat bootRun
+docker-compose logs -f app
 ```
 
-**Через IntelliJ IDEA:**
-`BookingApplication.java` → нажать ▶ рядом с методом `main`
-
-Приложение запустится на `http://localhost:8555`.  
-Hibernate автоматически создаст все таблицы в PostgreSQL (`ddl-auto: update`).
-
-### Шаг 4 — Открыть Swagger UI
+### Шаг 3 — Открыть Swagger UI
 
 ```
 http://localhost:8555/swagger-ui.html
@@ -596,7 +589,7 @@ http://localhost:8555/swagger-ui.html
 
 Теперь все запросы будут с JWT-заголовком.
 
-### Шаг 5 — Остановить
+### Шаг 4 — Остановить
 
 ```bash
 # Остановить контейнеры (данные сохранятся)
@@ -949,14 +942,7 @@ docker-compose up -d
 В `logback-spring.xml` настроен `Loki4jAppender`:
 - Логи отправляются по HTTP на `${LOKI_URL:-http://localhost:3100}`
 - Каждый лог помечается лейблами: `app`, `host`, `level`
-- Переменная `LOKI_URL` позволяет изменить адрес при запуске в Docker
-
-Для запуска приложения в Docker с правильным адресом Loki:
-```bash
-LOKI_URL=http://loki:3100 java -jar booking-service.jar
-# или
-docker run -e LOKI_URL=http://loki:3100 booking-service
-```
+- При запуске через `docker-compose up` переменная `LOKI_URL=http://loki:3100` уже задана автоматически
 
 ---
 

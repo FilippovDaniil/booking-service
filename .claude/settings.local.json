@@ -26,7 +26,10 @@
       "Bash(./gradlew cleanTest test --tests \"com.booking.service.*\" --tests \"com.booking.security.*\")",
       "Bash(./gradlew cleanTest test)",
       "Bash(awk '{sum+=$1}END{print \"Total tests: \"sum}')",
-      "Bash(python -c ' *)"
+      "Bash(python -c ' *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\MaxxPC\\\\IdeaProjects\\\\Pet_Booking\" -Recurse -Depth 2)",
+      "Bash(Select-Object FullName, PSIsContainer)",
+      "Bash(Format-List)"
     ]
   }
 }
