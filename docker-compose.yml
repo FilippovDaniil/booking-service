@@ -16,6 +16,7 @@ services:
       SPRING_REDIS_PORT: 6379
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOKI_URL: http://loki:3100
+      JWT_SECRET: localDevSecretKeyMustBeAtLeast256BitsLongForHS256!
     depends_on:
       postgres:
         condition: service_healthy

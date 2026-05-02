@@ -29,8 +29,9 @@ COPY gradlew ./
 # Скачиваем зависимости (этот слой будет закэширован)
 RUN ./gradlew dependencies --no-daemon || true
 
-# Теперь копируем исходный код
+# Теперь копируем исходный код и фронтенд
 COPY src/ src/
+COPY frontend/ src/main/resources/static/frontend/
 
 # Собираем JAR, пропуская тесты (они уже прогнаны в CI)
 # -x test — исключить task "test"
@@ -60,7 +61,7 @@ EXPOSE 8555
 # Переменные окружения с дефолтными значениями.
 # Реальные значения передаются через docker-compose.yml или GitLab Variables.
 ENV SPRING_PROFILES_ACTIVE=prod
-ENV JWT_SECRET=changeMeInProduction
+ENV JWT_SECRET=localDevSecretKeyMustBeAtLeast256BitsLongForHS256!
 
 # Точка входа — команда запуска при старте контейнера.
 # -Djava.security.egd — ускоряет генерацию случайных чисел в Docker (для JWT)

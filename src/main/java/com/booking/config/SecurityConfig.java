@@ -50,6 +50,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/auth/**").permitAll()           // регистрация и логин — без токена
                 .requestMatchers(HttpMethod.GET, "/api/apartments/**").permitAll() // поиск квартир — публично
                 .requestMatchers("/swagger-ui/**", "/api-docs/**", "/swagger-ui.html").permitAll() // документация
+                .requestMatchers("/frontend/**").permitAll()           // статические HTML-страницы
                 .anyRequest().authenticated()                          // всё остальное требует JWT
             )
             // Наш фильтр должен запустится ДО стандартного фильтра логина,
