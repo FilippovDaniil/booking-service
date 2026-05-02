@@ -34,7 +34,7 @@ public class Review {
     @Column(nullable = false)
     private int rating;
 
-    @Column(columnDefinition = "TEXT")
+    @Column(columnDefinition = "TEXT") // TEXT: неограниченная длина, в отличие от VARCHAR(255)
     private String comment;
 
     @CreationTimestamp

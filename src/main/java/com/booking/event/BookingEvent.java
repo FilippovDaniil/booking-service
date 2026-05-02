@@ -24,11 +24,11 @@ public class BookingEvent {
         CREATED, CONFIRMED, CANCELLED, EXPIRED, COMPLETED
     }
 
-    private Long bookingId;
-    private Long clientId;
-    private Long apartmentId;
-    private EventType eventType;
-    private BookingStatus newStatus; // статус ПОСЛЕ изменения
+    private Long bookingId;           // ID брони, к которой относится событие
+    private Long clientId;            // ID клиента, создавшего бронь
+    private Long apartmentId;         // ID квартиры из брони
+    private EventType eventType;      // тип перехода (CREATED, CONFIRMED и т.д.)
+    private BookingStatus newStatus;  // статус ПОСЛЕ изменения
     private LocalDateTime occurredAt; // время наступления события
 
     /** Основной конструктор: время события выставляется автоматически. */

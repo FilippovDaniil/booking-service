@@ -22,7 +22,11 @@
       "Bash(./gradlew test *)",
       "Bash(grep -v \"^$\")",
       "Bash(xargs grep *)",
-      "Bash(awk -F'\"' '{s+=$2}END{print \"Total tests: \"s}')"
+      "Bash(awk -F'\"' '{s+=$2}END{print \"Total tests: \"s}')",
+      "Bash(./gradlew cleanTest test --tests \"com.booking.service.*\" --tests \"com.booking.security.*\")",
+      "Bash(./gradlew cleanTest test)",
+      "Bash(awk '{sum+=$1}END{print \"Total tests: \"sum}')",
+      "Bash(python -c ' *)"
     ]
   }
 }

@@ -240,6 +240,27 @@ class BookingServiceTest {
                 .hasMessageContaining("already started");
     }
 
+    @Test
+    void cancelByClient_чужаяБронь_бросаетAccessDeniedException() {
+        User otherClient = User.builder().id(99L).role(Role.CLIENT).build();
+        when(bookingRepository.findById(100L)).thenReturn(Optional.of(pendingBooking));
+        when(securityUtils.getCurrentUser()).thenReturn(otherClient);
+
+        assertThatThrownBy(() -> bookingService.cancelByClient(100L))
+                .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void cancelByClient_неверныйСтатус_бросаетException() {
+        pendingBooking.setStatus(BookingStatus.CANCELLED_BY_CLIENT);
+        when(bookingRepository.findById(100L)).thenReturn(Optional.of(pendingBooking));
+        when(securityUtils.getCurrentUser()).thenReturn(client);
+
+        assertThatThrownBy(() -> bookingService.cancelByClient(100L))
+                .isInstanceOf(InvalidOperationException.class)
+                .hasMessageContaining("Cannot cancel booking with status");
+    }
+
     // ==================== cancelByLandlord ====================
 
     @Test
@@ -263,6 +284,76 @@ class BookingServiceTest {
 
         assertThatThrownBy(() -> bookingService.cancelByLandlord(100L))
                 .isInstanceOf(AccessDeniedException.class);
+    }
+
+    // ==================== getById ====================
+
+    @Test
+    void getById_клиентВидитСвоюБронь() {
+        when(bookingRepository.findById(100L)).thenReturn(Optional.of(pendingBooking));
+        when(securityUtils.getCurrentUser()).thenReturn(client);
+
+        BookingResponse response = bookingService.getById(100L);
+
+        assertThat(response.getId()).isEqualTo(100L);
+        assertThat(response.getStatus()).isEqualTo(BookingStatus.PENDING);
+    }
+
+    @Test
+    void getById_посторонний_бросаетAccessDeniedException() {
+        User stranger = User.builder().id(55L).role(Role.CLIENT).build();
+        when(bookingRepository.findById(100L)).thenReturn(Optional.of(pendingBooking));
+        when(securityUtils.getCurrentUser()).thenReturn(stranger);
+
+        assertThatThrownBy(() -> bookingService.getById(100L))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessageContaining("Access denied");
+    }
+
+    @Test
+    void getById_adminВидитЛюбуюБронь() {
+        User admin = User.builder().id(99L).role(Role.ADMIN).build();
+        when(bookingRepository.findById(100L)).thenReturn(Optional.of(pendingBooking));
+        when(securityUtils.getCurrentUser()).thenReturn(admin);
+
+        BookingResponse response = bookingService.getById(100L);
+
+        assertThat(response).isNotNull();
+    }
+
+    // ==================== getMyBookings ====================
+
+    @Test
+    void getMyBookings_клиент_возвращаетТолькоСвоиБрони() {
+        when(securityUtils.getCurrentUser()).thenReturn(client);
+        when(bookingRepository.findByClient(client)).thenReturn(List.of(pendingBooking));
+
+        List<BookingResponse> result = bookingService.getMyBookings();
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getClientId()).isEqualTo(1L);
+    }
+
+    @Test
+    void getMyBookings_landlord_возвращаетБрониСвоихКвартир() {
+        when(securityUtils.getCurrentUser()).thenReturn(landlord);
+        when(bookingRepository.findByApartmentLandlord(landlord)).thenReturn(List.of(pendingBooking));
+
+        List<BookingResponse> result = bookingService.getMyBookings();
+
+        assertThat(result).hasSize(1);
+    }
+
+    @Test
+    void getMyBookings_admin_возвращаетВсеБрони() {
+        User admin = User.builder().id(99L).role(Role.ADMIN).build();
+        when(securityUtils.getCurrentUser()).thenReturn(admin);
+        when(bookingRepository.findAll()).thenReturn(List.of(pendingBooking));
+
+        List<BookingResponse> result = bookingService.getMyBookings();
+
+        assertThat(result).hasSize(1);
+        verify(bookingRepository).findAll();
     }
 
     // ==================== expirePendingBookings (планировщик) ====================
