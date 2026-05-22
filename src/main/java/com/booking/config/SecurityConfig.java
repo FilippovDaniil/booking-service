@@ -51,6 +51,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/api/apartments/**").permitAll() // поиск квартир — публично
                 .requestMatchers("/swagger-ui/**", "/api-docs/**", "/swagger-ui.html").permitAll() // документация
                 .requestMatchers("/frontend/**").permitAll()           // статические HTML-страницы
+                .requestMatchers("/actuator/**").permitAll()           // K8s readiness/liveness probes
                 .anyRequest().authenticated()                          // всё остальное требует JWT
             )
             // Наш фильтр должен запустится ДО стандартного фильтра логина,

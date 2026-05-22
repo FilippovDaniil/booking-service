@@ -1,0 +1,370 @@
+# ============================================================
+# 09-dashboard.yaml — Kubernetes Dashboard (веб-интерфейс управления кластером)
+#
+# Kubernetes Dashboard — официальный веб-UI для просмотра и управления кластером.
+# Устанавливается в отдельный namespace "kubernetes-dashboard" (не в pet-booking!).
+# Доступен через NodePort 30443: https://localhost:30443
+#
+# СОДЕРЖИТ 15 ресурсов:
+#   1. Namespace               — kubernetes-dashboard
+#   2. ServiceAccount          — kubernetes-dashboard (для самого дашборда)
+#   3. ServiceAccount          — admin-user (для нашего входа с полными правами)
+#   4. Secret                  — admin-user-token (долгосрочный токен для входа)
+#   5. ClusterRoleBinding      — admin-user → cluster-admin (полные права)
+#   6. ClusterRole             — kubernetes-dashboard (чтение метрик)
+#   7. ClusterRoleBinding      — kubernetes-dashboard → его ClusterRole
+#   8. Role                    — kubernetes-dashboard (права в своём namespace)
+#   9. RoleBinding             — kubernetes-dashboard → его Role
+#  10. ConfigMap               — kubernetes-dashboard-settings (настройки UI)
+#  11. Secret                  — kubernetes-dashboard-certs (TLS сертификаты, пустой)
+#  12. Deployment              — kubernetes-dashboard
+#  13. Deployment              — dashboard-metrics-scraper (сбор метрик подов)
+#  14. Service NodePort        — kubernetes-dashboard (30443 → 8443)
+#  15. Service ClusterIP       — dashboard-metrics-scraper
+#
+# КАК ВОЙТИ:
+#   1. kubectl apply -f rancher/k8s/09-dashboard.yaml
+#   2. Получить токен (PowerShell):
+#      $b64 = kubectl -n kubernetes-dashboard get secret admin-user-token -o jsonpath='{.data.token}'
+#      [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($b64))
+#   3. Открыть https://localhost:30443 → выбрать "Token" → вставить токен
+#   4. Браузер покажет предупреждение HTTPS (самоподписанный сертификат) → "Дополнительно" → "Перейти"
+# ============================================================
+
+# ================================================================
+# БЛОК 1: NAMESPACE
+# ================================================================
+# Dashboard устанавливается в отдельный namespace — изоляция от нашего стека.
+# Удалить: kubectl delete namespace kubernetes-dashboard
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kubernetes-dashboard
+
+---
+# ================================================================
+# БЛОК 2: СЛУЖЕБНЫЙ ServiceAccount для самого Dashboard
+# ================================================================
+# Dashboard запускается от имени этого ServiceAccount.
+# Он получает ограниченные права через Role + RoleBinding ниже.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubernetes-dashboard
+  namespace: kubernetes-dashboard
+
+---
+# ================================================================
+# БЛОК 3: ServiceAccount для нашего входа (admin-user)
+# ================================================================
+# Мы входим в Dashboard под этим аккаунтом.
+# Он получает права cluster-admin через ClusterRoleBinding ниже.
+# Токен для входа хранится в Secret "admin-user-token".
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: admin-user
+  namespace: kubernetes-dashboard
+
+---
+# ================================================================
+# БЛОК 4: Secret с токеном для входа (долгосрочный)
+# ================================================================
+# type: kubernetes.io/service-account-token — специальный тип Secret.
+# K8s автоматически заполняет поле .data.token JWT-токеном для admin-user.
+# Аннотация service-account.name связывает Secret с ServiceAccount.
+#
+# "Долгосрочный" = не истекает автоматически (в отличие от ephemeral tokens).
+# Нужен потому что стандартные ServiceAccount токены в K8s 1.24+ не монтируются
+# автоматически — нужен явный Secret.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: admin-user-token
+  namespace: kubernetes-dashboard
+  annotations:
+    kubernetes.io/service-account.name: admin-user  # Привязка к ServiceAccount admin-user
+type: kubernetes.io/service-account-token           # K8s автоматически создаст JWT-токен
+
+---
+# ================================================================
+# БЛОК 5: ClusterRoleBinding — admin-user получает полные права кластера
+# ================================================================
+# ClusterRoleBinding vs RoleBinding:
+#   RoleBinding — права только в одном namespace
+#   ClusterRoleBinding — права во ВСЁМ кластере
+#
+# cluster-admin — встроенная роль K8s с полными правами.
+# Мы даём её admin-user чтобы Dashboard показывал ресурсы всех namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: admin-user              # Уникальное имя binding'а (глобальное, без namespace)
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin           # Встроенная роль K8s: полные права на всё
+subjects:
+  - kind: ServiceAccount
+    name: admin-user            # Кому даём права
+    namespace: kubernetes-dashboard
+
+---
+# ================================================================
+# БЛОК 6: ClusterRole для kubernetes-dashboard (чтение метрик)
+# ================================================================
+# Dashboard собирает метрики (CPU/RAM) через metrics.k8s.io API.
+# Эти права нужны на уровне кластера (не отдельного namespace).
+# Имя: kubernetes-dashboard-metrics (не "kubernetes-dashboard" — тот уже существует в кластере
+# с roleRef=cluster-admin и менять roleRef K8s запрещает).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubernetes-dashboard-metrics  # Уникальное имя, не конфликтует с существующим
+rules:
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods", "nodes"]       # Метрики подов и нод
+    verbs: ["get", "list", "watch"]
+
+---
+# ================================================================
+# БЛОК 7: ClusterRoleBinding — kubernetes-dashboard получает ClusterRole
+# ================================================================
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubernetes-dashboard-metrics  # Уникальное имя, не конфликтует с существующим CRB
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubernetes-dashboard-metrics  # Привязываем к ClusterRole из блока 6
+subjects:
+  - kind: ServiceAccount
+    name: kubernetes-dashboard         # Служебный ServiceAccount Dashboard (блок 2)
+    namespace: kubernetes-dashboard
+
+---
+# ================================================================
+# БЛОК 8: Role для kubernetes-dashboard (права в своём namespace)
+# ================================================================
+# Dashboard нужен доступ к Secrets (например, для TLS сертификатов)
+# и ConfigMap в namespace kubernetes-dashboard.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kubernetes-dashboard
+  namespace: kubernetes-dashboard  # Права только в этом namespace
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]         # Чтение/запись Secrets (TLS сертификаты Dashboard)
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["configmaps"]      # Чтение/запись ConfigMap (настройки Dashboard)
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["services"]        # Просмотр сервисов (для metrics-scraper)
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["replicasets"]     # Просмотр ReplicaSet (для информации о деплойменте)
+    verbs: ["get", "list", "watch"]
+
+---
+# ================================================================
+# БЛОК 9: RoleBinding — kubernetes-dashboard получает свою Role
+# ================================================================
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kubernetes-dashboard
+  namespace: kubernetes-dashboard
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kubernetes-dashboard    # Role из блока 8
+subjects:
+  - kind: ServiceAccount
+    name: kubernetes-dashboard  # Служебный ServiceAccount (блок 2)
+    namespace: kubernetes-dashboard
+
+---
+# ================================================================
+# БЛОК 10: ConfigMap с настройками UI Dashboard
+# ================================================================
+# Хранит пользовательские настройки Dashboard (например, namespace по умолчанию).
+# Создаём пустым — Dashboard заполнит при первом использовании.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubernetes-dashboard-settings
+  namespace: kubernetes-dashboard
+# data: — пусто, Dashboard сам пишет сюда настройки
+
+---
+# ================================================================
+# БЛОК 11: Secret для TLS сертификатов Dashboard
+# ================================================================
+# Dashboard работает по HTTPS. Флаг --auto-generate-certificates (см. Deployment ниже)
+# автоматически генерирует самоподписанный сертификат и кладёт его СЮДА.
+# Создаём пустым Secret — Dashboard заполнит при первом старте.
+# Поэтому браузер показывает предупреждение о самоподписанном сертификате — это нормально.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kubernetes-dashboard-certs
+  namespace: kubernetes-dashboard
+type: Opaque  # Пустой Opaque Secret, Dashboard сам запишет туда TLS ключи
+
+---
+# ================================================================
+# БЛОК 12: Deployment — kubernetes-dashboard
+# ================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubernetes-dashboard
+  namespace: kubernetes-dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kubernetes-dashboard
+  template:
+    metadata:
+      labels:
+        app: kubernetes-dashboard
+    spec:
+      serviceAccountName: kubernetes-dashboard  # Запускать от имени служебного ServiceAccount (блок 2)
+                                                 # Через него Dashboard получает доступ к K8s API
+
+      # Tolerations нужны потому что в Rancher Desktop один узел — control-plane.
+      # По умолчанию control-plane нода помечена taint'ом NoSchedule,
+      # который запрещает размещать поды на ней без явного разрешения.
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule  # Разрешить размещение на control-plane ноде
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule  # Поддержка legacy имени (старые версии K8s)
+
+      containers:
+        - name: kubernetes-dashboard
+          image: kubernetesui/dashboard:v2.7.0  # Официальный образ K8s Dashboard v2.7.0
+          imagePullPolicy: IfNotPresent          # Скачать если нет локально (ок, это публичный образ)
+          ports:
+            - containerPort: 8443   # Dashboard слушает на HTTPS (не HTTP!)
+              protocol: TCP
+          args:
+            - --auto-generate-certificates  # Автоматически создать самоподписанный TLS сертификат
+                                             # и сохранить в Secret kubernetes-dashboard-certs (блок 11)
+            - --namespace=kubernetes-dashboard  # Namespace Dashboard'а (для поиска своих Secrets/ConfigMap)
+          volumeMounts:
+            - name: certs
+              mountPath: /certs   # Куда смонтированы TLS сертификаты
+            - name: tmp
+              mountPath: /tmp     # Временная директория (нужна Dashboard'у для work files)
+          livenessProbe:
+            httpGet:
+              scheme: HTTPS       # Dashboard работает по HTTPS
+              path: /
+              port: 8443
+            initialDelaySeconds: 30
+            timeoutSeconds: 30
+
+      volumes:
+        - name: certs
+          secret:
+            secretName: kubernetes-dashboard-certs  # TLS сертификаты из блока 11
+        - name: tmp
+          emptyDir: {}            # Пустой ephemeral том для временных файлов
+
+---
+# ================================================================
+# БЛОК 13: Deployment — dashboard-metrics-scraper
+# ================================================================
+# Вспомогательный компонент: собирает метрики CPU/RAM из metrics.k8s.io API
+# и предоставляет их Dashboard'у через HTTP на порту 8000.
+# Dashboard отображает графики потребления ресурсов подов на основе этих данных.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard-metrics-scraper
+  namespace: kubernetes-dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dashboard-metrics-scraper
+  template:
+    metadata:
+      labels:
+        app: dashboard-metrics-scraper
+    spec:
+      serviceAccountName: kubernetes-dashboard  # Те же права что и Dashboard (нужен доступ к metrics API)
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: dashboard-metrics-scraper
+          image: kubernetesui/metrics-scraper:v1.0.9  # Официальный scraper для Dashboard
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+              protocol: TCP
+          volumeMounts:
+            - name: tmp-scraper
+              mountPath: /tmp   # metrics-scraper пишет SQLite базу в /tmp/metrics.db
+                                # Без emptyDir том недоступен для записи → fatal crash
+          livenessProbe:
+            httpGet:
+              scheme: HTTP  # metrics-scraper работает по HTTP (не HTTPS)
+              path: /
+              port: 8000
+            initialDelaySeconds: 30
+            timeoutSeconds: 30
+      volumes:
+        - name: tmp-scraper
+          emptyDir: {}          # Временный том в памяти — пересоздаётся при каждом перезапуске
+
+---
+# ================================================================
+# БЛОК 14: Service NodePort — kubernetes-dashboard
+# ================================================================
+# Dashboard работает по HTTPS. NodePort 30443 делает его доступным с хоста.
+# URL: https://localhost:30443
+# Браузер покажет предупреждение о самоподписанном сертификате — нажать "Дополнительно" → "Перейти"
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubernetes-dashboard
+  namespace: kubernetes-dashboard
+spec:
+  selector:
+    app: kubernetes-dashboard
+  ports:
+    - port: 443         # Стандартный HTTPS порт (внутри кластера)
+      targetPort: 8443  # Порт контейнера Dashboard
+      nodePort: 30443   # Порт на хосте (localhost:30443). 30000 + 443 = 30443.
+  type: NodePort
+
+---
+# ================================================================
+# БЛОК 15: Service ClusterIP — dashboard-metrics-scraper
+# ================================================================
+# Dashboard обращается к metrics-scraper внутри кластера — внешний доступ не нужен.
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard-metrics-scraper
+  namespace: kubernetes-dashboard
+spec:
+  selector:
+    app: dashboard-metrics-scraper
+  ports:
+    - port: 8000        # HTTP порт metrics-scraper
+      targetPort: 8000
+  type: ClusterIP       # Только внутри кластера — только Dashboard обращается сюда

@@ -29,7 +29,23 @@
       "Bash(python -c ' *)",
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\MaxxPC\\\\IdeaProjects\\\\Pet_Booking\" -Recurse -Depth 2)",
       "Bash(Select-Object FullName, PSIsContainer)",
-      "Bash(Format-List)"
+      "Bash(Format-List)",
+      "Bash(dir /s /b \"C:\\\\Users\\\\MaxxPC\\\\IdeaProjects\\\\Pet_Booking\\\\monitoring\")",
+      "Bash(kubectl version *)",
+      "Bash(kubectl config *)",
+      "Bash(rdctl version *)",
+      "Bash(kubectl get *)",
+      "Bash(rdctl shell *)",
+      "Bash(docker context *)",
+      "Bash(docker build *)",
+      "Bash(docker save *)",
+      "Bash(kubectl apply *)",
+      "Bash(kubectl delete *)",
+      "Bash(kubectl describe *)",
+      "Bash(kubectl rollout *)",
+      "Bash(kubectl logs *)",
+      "Bash(kubectl exec *)",
+      "Bash(Start-Sleep 15)"
     ]
   }
 }

@@ -1,0 +1,97 @@
+# ============================================================
+# 02-postgres.yaml — База данных PostgreSQL
+#
+# Содержит три Kubernetes-объекта (разделены ---):
+#   1. PersistentVolumeClaim — запрос на дисковое хранилище
+#   2. Deployment            — запуск контейнера PostgreSQL
+#   3. Service               — DNS-имя и порт внутри кластера
+# ============================================================
+
+# --- Объект 1: PersistentVolumeClaim (PVC) ---
+# PVC — запрос на постоянное хранилище (диск) в кластере.
+# Без PVC данные PostgreSQL исчезнут при перезапуске пода.
+# K8s автоматически создаст PersistentVolume (реальный диск)
+# и привяжет его к этому PVC.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc    # Имя PVC — указывается в volumes.persistentVolumeClaim.claimName ниже
+  namespace: pet-booking
+spec:
+  accessModes:
+    - ReadWriteOnce     # Диск монтируется только к одному узлу одновременно (стандарт для БД)
+                        # Альтернативы: ReadWriteMany (NFS), ReadOnlyMany
+  resources:
+    requests:
+      storage: 1Gi      # 1 Гигабайт — достаточно для учебного проекта с небольшим объёмом данных
+
+---
+# --- Объект 2: Deployment ---
+# Deployment управляет жизнью пода: запускает, перезапускает при сбое,
+# управляет обновлениями (rolling update).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres        # Имя Deployment
+  namespace: pet-booking
+spec:
+  replicas: 1           # Один экземпляр PostgreSQL. Для БД не делают replicas > 1 без специальных решений
+  selector:
+    matchLabels:
+      app: postgres     # Deployment управляет подами с этим label
+  template:             # Шаблон пода — то, что будет запущено
+    metadata:
+      labels:
+        app: postgres   # Label пода — по нему Service направляет трафик (selector в Service ниже)
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16  # Официальный образ PostgreSQL 16 — та же версия что в docker-compose.yml
+          env:
+            - name: POSTGRES_DB
+              value: bookingdb          # Имя базы данных, создаётся автоматически при первом запуске
+            - name: POSTGRES_USER
+              value: postgres           # Пользователь БД — совпадает с SPRING_DATASOURCE_USERNAME
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: booking-secrets # Берём пароль из Secret (не хардкодим здесь!)
+                  key: db-password
+          ports:
+            - containerPort: 5432       # PostgreSQL слушает на этом порту внутри контейнера
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data  # Стандартный путь хранения данных PostgreSQL
+          readinessProbe:               # Проба "готовности" — когда под готов принимать запросы?
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-d", "bookingdb"]
+              # pg_isready — утилита PostgreSQL, проверяет что сервер принимает соединения
+              # Пока не вернёт 0, Service не направляет трафик на этот под
+            initialDelaySeconds: 10     # Подождать 10 сек после старта перед первой проверкой
+            periodSeconds: 5            # Проверять каждые 5 секунд
+            failureThreshold: 6         # 6 неудач подряд = под не готов
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: postgres-pvc     # Подключаем диск из PVC, созданного выше
+
+---
+# --- Объект 3: Service ---
+# Service — стабильный сетевой адрес для пода.
+# Поды имеют временные IP, Service даёт постоянное DNS-имя внутри кластера.
+# Другие поды обращаются к PostgreSQL по имени "postgres" (DNS = postgres.pet-booking.svc.cluster.local)
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres        # DNS-имя сервиса внутри кластера
+                        # Совпадает с именем контейнера в docker-compose — поэтому SPRING_DATASOURCE_URL
+                        # jdbc:postgresql://postgres:5432/bookingdb работает в обеих средах
+  namespace: pet-booking
+spec:
+  selector:
+    app: postgres       # Направлять трафик на поды с label app=postgres
+  ports:
+    - port: 5432        # Порт, на котором доступен Service внутри кластера
+      targetPort: 5432  # Порт контейнера, на который проксируется трафик
+  type: ClusterIP       # ClusterIP — только внутри кластера, не доступен снаружи (правильно для БД!)
+                        # Альтернативы: NodePort (доступен извне), LoadBalancer (облако)

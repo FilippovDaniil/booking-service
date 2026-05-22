@@ -1,0 +1,166 @@
+# ============================================================
+# 07-grafana.yaml — Визуализация логов (Grafana 11.1.0)
+#
+# Grafana читает логи из Loki и отображает дашборды.
+# Доступна снаружи кластера через NodePort 30300.
+# URL: http://localhost:30300
+#
+# Автоматическая настройка через provisioning:
+# Grafana при старте читает YAML-файлы из /etc/grafana/provisioning/:
+#   datasources/ → подключения к источникам данных (Loki)
+#   dashboards/  → список папок с дашбордами
+# Файлы монтируются из ConfigMap — не нужно настраивать Grafana вручную.
+#
+# Два ConfigMap для Grafana:
+#   grafana-datasources      → /etc/grafana/provisioning/datasources/loki.yml
+#   grafana-dashboards-config → /etc/grafana/provisioning/dashboards/dashboards.yml
+#
+# ВАЖНО про монтирование двух ConfigMap в одну директорию:
+# Нельзя монтировать оба в /etc/grafana/provisioning/dashboards/ — второй перезатрёт первый!
+# Решение: dashboards-config монтируется в /dashboards/, а JSON файлы дашбордов — в /dashboards/json/
+# (подпапка). В dashboards.yml путь указываем path: /etc/grafana/provisioning/dashboards/json
+# ============================================================
+
+# --- Объект 1: ConfigMap — источник данных Loki ---
+# Grafana автоматически добавит Loki как datasource при старте.
+# Содержимое = файл /etc/grafana/provisioning/datasources/loki.yml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources   # Монтируется в /etc/grafana/provisioning/datasources/
+  namespace: pet-booking
+data:
+  loki.yml: |                  # Имя ключа = имя файла в директории монтирования
+    apiVersion: 1
+
+    datasources:
+      - name: Loki             # Отображаемое имя в интерфейсе Grafana
+        type: loki             # Тип плагина
+        access: proxy          # Grafana сервер проксирует запросы к Loki (не браузер напрямую)
+        url: http://loki:3100  # Адрес Loki внутри кластера (K8s DNS: loki.pet-booking.svc.cluster.local)
+        isDefault: true        # Выбрать этот datasource по умолчанию в Explore
+        version: 1
+        editable: false        # Запретить редактирование через UI (управляем через ConfigMap)
+
+---
+# --- Объект 2: ConfigMap — конфигурация папок с дашбордами ---
+# Говорит Grafana где искать JSON-файлы дашбордов.
+# Содержимое = файл /etc/grafana/provisioning/dashboards/dashboards.yml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards-config  # Монтируется в /etc/grafana/provisioning/dashboards/
+  namespace: pet-booking
+data:
+  dashboards.yml: |
+    apiVersion: 1
+
+    providers:
+      - name: default           # Имя провайдера (произвольное)
+        orgId: 1                # ID организации (по умолчанию 1)
+        folder: ''              # Папка в Grafana UI (пустая строка = корневая)
+        type: file              # Читать дашборды из файлов
+        disableDeletion: false  # Разрешить удаление дашбордов через UI
+        options:
+          path: /etc/grafana/provisioning/dashboards/json
+          # ⚠️  Подпапка /json — не сама /dashboards/!
+          # Если бы JSON-дашборды монтировались в /dashboards/ напрямую,
+          # они перезатёрли бы этот dashboards.yml (K8s заменяет директорию целиком).
+          # Монтирование в подпапку /json обходит это ограничение.
+
+---
+# --- Объект 3: PersistentVolumeClaim ---
+# Grafana хранит SQLite БД с пользователями, настройками UI и плагинами.
+# Без PVC все изменения через интерфейс потеряются при перезапуске.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-pvc
+  namespace: pet-booking
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 256Mi   # 256 МБ достаточно для SQLite + кэш плагинов
+
+---
+# --- Объект 4: Deployment ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: pet-booking
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:11.1.0  # Та же версия что в docker-compose.yml
+          env:
+            - name: GF_AUTH_ANONYMOUS_ENABLED
+              value: "true"              # Разрешить просмотр без логина (удобно для dev)
+            - name: GF_AUTH_ANONYMOUS_ORG_ROLE
+              value: "Admin"             # Анонимные пользователи = Admin (полный доступ)
+            - name: GF_AUTH_DISABLE_LOGIN_FORM
+              value: "false"             # Форма входа видна (можно войти как admin/admin)
+          ports:
+            - containerPort: 3000        # HTTP интерфейс Grafana
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/grafana           # Данные Grafana: SQLite, плагины, кэш
+            - name: datasources
+              mountPath: /etc/grafana/provisioning/datasources
+              # ← ConfigMap grafana-datasources монтируется СЮДА
+              # Файл loki.yml появится как /etc/grafana/provisioning/datasources/loki.yml
+            - name: dashboards-config
+              mountPath: /etc/grafana/provisioning/dashboards
+              # ← ConfigMap grafana-dashboards-config монтируется СЮДА
+              # Файл dashboards.yml → /etc/grafana/provisioning/dashboards/dashboards.yml
+              # (JSON дашборды будут в подпапке /json — если добавим третий ConfigMap)
+          readinessProbe:
+            httpGet:
+              path: /api/health   # Grafana предоставляет health endpoint
+              port: 3000
+            initialDelaySeconds: 15  # Grafana инициализирует БД и загружает плагины ~10-15 сек
+            periodSeconds: 10
+            failureThreshold: 6
+
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: grafana-pvc           # Данные Grafana
+
+        - name: datasources
+          configMap:
+            name: grafana-datasources        # ConfigMap с loki.yml
+
+        - name: dashboards-config
+          configMap:
+            name: grafana-dashboards-config  # ConfigMap с dashboards.yml
+
+---
+# --- Объект 5: Service ---
+# NodePort — единственный сервис в стеке с внешним доступом (кроме приложения и Dashboard).
+# После запуска Grafana доступна по: http://localhost:30300
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: pet-booking
+spec:
+  selector:
+    app: grafana
+  ports:
+    - port: 3000        # Порт внутри кластера
+      targetPort: 3000  # Порт контейнера Grafana
+      nodePort: 30303   # Порт на хост-машине. NodePort диапазон: 30000-32767.
+                        # 30303 — 30300-30302 заняты другими Grafana в кластере
+  type: NodePort        # Делает сервис доступным снаружи кластера через порт на ноде

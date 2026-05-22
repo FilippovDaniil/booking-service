@@ -27,6 +27,7 @@
 13. [Мониторинг: Loki + Grafana](#13-мониторинг-loki--grafana)
 14. [CI/CD через GitLab](#14-cicd-через-gitlab)
 15. [Переменные окружения](#15-переменные-окружения)
+16. [Запуск в Kubernetes (Rancher Desktop)](#16-запуск-в-kubernetes-rancher-desktop)
 
 ---
 
@@ -65,6 +66,7 @@
 | Логирование | **Logback + Loki4j** | Структурированные логи с отправкой в Loki |
 | Мониторинг | **Grafana + Loki** | Визуализация и поиск по логам |
 | Контейнеризация | **Docker + Docker Compose** | Одна команда поднимает всё: приложение + БД + Kafka + мониторинг |
+| Оркестрация | **Kubernetes (Rancher Desktop / k3s)** | Локальный K8s-кластер для тестирования production-деплоя |
 | CI/CD | **GitLab CI** | Автоматические сборка, тесты, деплой |
 
 ---
@@ -513,11 +515,26 @@ booking-service/
 │           └── datasources/
 │               └── loki.yml             ← автоподключение Loki в Grafana при старте
 │
+├── rancher/                             ← Kubernetes-деплой для Rancher Desktop
+│   ├── build-and-load.ps1               ← скрипт: сборка образа + загрузка в VM
+│   └── k8s/                            ← K8s манифесты (применяются по порядку)
+│       ├── 00-namespace.yaml            ← namespace: pet-booking
+│       ├── 01-secrets.yaml             ← пароли (DB, JWT)
+│       ├── 02-postgres.yaml            ← PostgreSQL 16: PVC + Deployment + Service
+│       ├── 03-redis.yaml               ← Redis 7: Deployment + Service
+│       ├── 04-zookeeper.yaml           ← ZooKeeper: Deployment + Service
+│       ├── 05-kafka.yaml               ← Kafka: Deployment + Service
+│       ├── 06-loki.yaml                ← Loki 3.1: ConfigMap + PVC + Deployment + Service
+│       ├── 07-grafana.yaml             ← Grafana 11.1: 2×ConfigMap + PVC + Deployment + NodePort
+│       ├── 08-app.yaml                 ← Spring Boot: ConfigMap + Deployment + NodePort
+│       └── 09-dashboard.yaml           ← K8s Dashboard: RBAC + Deployment + NodePort
+│
 ├── frontend/                            ← статичные HTML-страницы
 ├── postman_tests/                       ← коллекция Postman для ручного тестирования
 ├── Dockerfile                           ← сборка Docker-образа приложения
 ├── docker-compose.yml                   ← полный запуск: приложение + PostgreSQL + Redis + Kafka + Loki + Grafana
 ├── docker-compose.prod.yml              ← продакшн деплой
+├── rancher.md                           ← portable guide по K8s/Rancher Desktop (переиспользуется в других проектах)
 ├── .gitlab-ci.yml                       ← CI/CD pipeline
 ├── build.gradle                         ← зависимости и настройки сборки Gradle
 ├── settings.gradle                      ← имя проекта (booking-service)
@@ -1076,3 +1093,197 @@ environment:
   - JWT_SECRET=${JWT_SECRET}
   - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD}
 ```
+
+---
+
+## 16. Запуск в Kubernetes (Rancher Desktop)
+
+Помимо docker-compose, проект можно запустить в локальном Kubernetes-кластере через **Rancher Desktop** — это полноценный K8s на вашей машине.
+
+> Подробный portable guide по K8s/Rancher Desktop с паттернами и решениями типичных проблем: **`rancher.md`** в корне проекта.
+
+### Что нужно установить
+
+| Инструмент | Где скачать | Зачем |
+|------------|-------------|-------|
+| **Rancher Desktop** | [rancherdesktop.io](https://rancherdesktop.io) | K8s + Docker в одном. При установке: Container Runtime = `dockerd (Moby)` |
+| Git | — | Клонирование репозитория |
+
+> Java, Gradle, kubectl, Docker — всё уже включено в Rancher Desktop. Устанавливать отдельно не нужно.
+
+### Архитектура Rancher Desktop
+
+```
+Windows Host
+│
+├── docker CLI ──► Docker Desktop daemon  ← используется для сборки образа
+│
+└── Rancher Desktop VM (Linux / WSL)
+    ├── Docker daemon ◄── k3s (--docker)  ← k3s использует ЭТОТ Docker, не Windows!
+    └── kubectl / helm ──► K8s API :6443
+```
+
+**Ключевой момент:** `docker build` создаёт образ в Docker Desktop. k3s видит только образы из своего Docker внутри VM. Поэтому нужен специальный скрипт загрузки.
+
+### Шаг 1 — Собрать и загрузить образ
+
+```powershell
+# Из корня проекта (где лежит Dockerfile):
+.\rancher\build-and-load.ps1
+```
+
+Скрипт выполняет три шага:
+1. `docker build --provenance=false` → образ в Docker Desktop  
+   (`--provenance=false` обязателен — без него BuildKit создаёт manifest list, k3s не видит)
+2. `docker save` → сохраняет образ в `%TEMP%\booking-service.tar`
+3. `rdctl shell -- docker load` → загружает tar в Docker VM Rancher Desktop
+
+### Шаг 2 — Задеплоить весь стек
+
+```powershell
+kubectl apply -f rancher/k8s/
+```
+
+Файлы применяются в алфавитном порядке (поэтому нумерация 00–09 важна):
+
+| Файл | Что создаёт | Namespace |
+|------|-------------|-----------|
+| `00-namespace.yaml` | namespace `pet-booking` | — |
+| `01-secrets.yaml` | DB password, JWT secret | pet-booking |
+| `02-postgres.yaml` | PostgreSQL 16 (PVC 1Gi + Deployment + ClusterIP) | pet-booking |
+| `03-redis.yaml` | Redis 7 (Deployment + ClusterIP) | pet-booking |
+| `04-zookeeper.yaml` | ZooKeeper (Deployment + ClusterIP) | pet-booking |
+| `05-kafka.yaml` | Kafka (Deployment + ClusterIP, dual listeners) | pet-booking |
+| `06-loki.yaml` | Loki 3.1 (ConfigMap + PVC 2Gi + Deployment + ClusterIP) | pet-booking |
+| `07-grafana.yaml` | Grafana 11.1 (2×ConfigMap + PVC + Deployment + NodePort) | pet-booking |
+| `08-app.yaml` | booking-service (ConfigMap + Deployment + NodePort) | pet-booking |
+| `09-dashboard.yaml` | K8s Dashboard (RBAC + 2×Deployment + NodePort) | kubernetes-dashboard |
+
+### Шаг 3 — Дождаться готовности
+
+```powershell
+# Следить за статусом
+kubectl get all -n pet-booking
+
+# Ждать пока приложение станет Ready
+kubectl rollout status deployment/booking-app -n pet-booking --timeout=180s
+```
+
+Порядок запуска автоматически управляется через **initContainers** в поде приложения:
+```
+ZooKeeper → Kafka → (параллельно: PostgreSQL, Redis)
+                         ↓
+               wait-for-postgres [initContainer]
+               wait-for-redis    [initContainer]
+               wait-for-kafka    [initContainer]
+                         ↓
+               Spring Boot стартует (8-10 сек)
+                         ↓
+               readinessProbe /actuator/health → 200 UP
+```
+
+### Доступные URL после запуска
+
+| Сервис | URL | Примечание |
+|--------|-----|------------|
+| **Приложение (API)** | http://localhost:30555 | REST API |
+| **Swagger UI** | http://localhost:30555/swagger-ui.html | Документация и тестирование |
+| **Фронтенд** | http://localhost:30555/frontend/index.html | Веб-интерфейс |
+| **Grafana** | http://localhost:30303 | Логи (анонимный Admin) |
+| **K8s Dashboard** | https://localhost:30443 | Управление кластером (предупреждение HTTPS — норма) |
+
+### Получить токен для K8s Dashboard
+
+```powershell
+$b64 = kubectl -n kubernetes-dashboard get secret admin-user-token -o jsonpath='{.data.token}'
+[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($b64))
+```
+
+Войти: https://localhost:30443 → выбрать **Token** → вставить токен.
+
+### Шаг 4 — Обновить приложение после изменений кода
+
+```powershell
+# 1. Пересобрать и загрузить образ
+.\rancher\build-and-load.ps1
+
+# 2. Применить обновлённый ConfigMap (если менялся)
+kubectl apply -f rancher/k8s/08-app.yaml
+
+# 3. Rolling restart
+kubectl rollout restart deployment/booking-app -n pet-booking
+
+# 4. Следить за обновлением
+kubectl rollout status deployment/booking-app -n pet-booking --timeout=180s
+```
+
+### Полезные команды
+
+```powershell
+# Статус всего стека
+kubectl get all -n pet-booking
+
+# Логи приложения (live)
+kubectl logs -n pet-booking deployment/booking-app -f
+
+# Описание пода — события, probe failures, ошибки образа
+kubectl describe pod -n pet-booking <pod-name>
+
+# Прямой доступ без NodePort
+kubectl port-forward -n pet-booking service/booking-service 8555:8555
+
+# Полный сброс и пересоздание
+kubectl delete namespace pet-booking
+kubectl apply -f rancher/k8s/
+```
+
+### Диагностика типичных проблем
+
+| Симптом | Причина | Решение |
+|---------|---------|---------|
+| `ErrImageNeverPull` | Образ не загружен в VM | Запустить `.\rancher\build-and-load.ps1` |
+| Pod не стартует, Exit Code 1 за 2 сек | Kafka получает `KAFKA_PORT` от K8s service links | `enableServiceLinks: false` в spec (уже есть) |
+| `readinessProbe failed: 503` | Один из HealthIndicator DOWN | `kubectl exec ... wget -qO- http://localhost:8555/actuator/health` для диагностики |
+| `CrashLoopBackOff` | Spring Boot не смог подключиться к БД/Kafka при старте | initContainers wait-for-* (уже есть) |
+| Pod рестартует при старте | `livenessProbe.initialDelaySeconds` меньше времени запуска | Увеличить `initialDelaySeconds` в 08-app.yaml |
+
+### Остановить стек
+
+```powershell
+# Удалить только наш стек (данные в PVC тоже удалятся)
+kubectl delete namespace pet-booking
+
+# Удалить Dashboard
+kubectl delete namespace kubernetes-dashboard
+kubectl delete clusterrolebinding admin-user kubernetes-dashboard-metrics
+kubectl delete clusterrole kubernetes-dashboard-metrics
+```
+
+---
+
+### Что было изменено при добавлении K8s-поддержки
+
+В процессе настройки K8s деплоя были обнаружены и исправлены несколько проблем в основном коде:
+
+**1. Добавлен Spring Boot Actuator (`build.gradle`)**
+```gradle
+implementation 'org.springframework.boot:spring-boot-starter-actuator'
+```
+K8s readiness/liveness probes используют `/actuator/health`. Без Actuator endpoint не существует → 404 → поды постоянно рестартовали.
+
+**2. Открыт `/actuator/**` в Spring Security (`SecurityConfig.java`)**
+```java
+.requestMatchers("/actuator/**").permitAll()  // K8s readiness/liveness probes
+```
+Без этого Spring Security возвращал 403 → readinessProbe провалилась → поды перезапускались бесконечно.
+
+**3. Исправлены свойства Redis (`application.yml`, `docker-compose.yml`)**
+В Spring Boot 3.2+ `spring.redis.*` удалено. Правильный путь — `spring.data.redis.*`:
+```yaml
+# Было (Spring Boot < 3.2):
+spring.redis.host: localhost
+
+# Стало (Spring Boot 3.2+):
+spring.data.redis.host: localhost
+```
+Соответственно env-переменные: `SPRING_DATA_REDIS_HOST` вместо `SPRING_REDIS_HOST`.

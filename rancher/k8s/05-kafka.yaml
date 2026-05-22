@@ -1,0 +1,132 @@
+# ============================================================
+# 05-kafka.yaml — Брокер сообщений Apache Kafka
+#
+# Kafka используется приложением для публикации событий бронирования
+# (BookingEventPublisher → topic "booking-lifecycle" → NotificationService).
+#
+# ⚠️  КРИТИЧЕСКАЯ ЛОВУШКА: enableServiceLinks: false
+# K8s автоматически создаёт переменные окружения для каждого Service в namespace:
+#   KAFKA_PORT=tcp://10.x.x.x:29092
+#   KAFKA_SERVICE_HOST=10.x.x.x
+#   и т.д.
+# Confluent Kafka-образ считает ВСЕ переменные с префиксом KAFKA_* конфигурацией!
+# KAFKA_PORT интерпретируется как параметр → конфликт → Pod падает через ~2 сек (Exit Code 1).
+# Решение: enableServiceLinks: false — отключить инжекцию этих переменных.
+#
+# DUAL LISTENERS (два слушателя):
+# Kafka должна сообщать клиентам свой адрес для подключения (advertised listeners).
+# Внутри кластера клиент должен получить адрес "kafka:29092" (K8s DNS).
+# Снаружи (через port-forward) клиент должен получить "localhost:9092".
+# Один listener не может обслуживать оба случая — нужны два.
+# ============================================================
+
+# --- Объект 1: Deployment ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka
+  namespace: pet-booking
+spec:
+  replicas: 1  # Один брокер — для разработки достаточно. В production: 3+ брокера для отказоустойчивости
+  selector:
+    matchLabels:
+      app: kafka
+  template:
+    metadata:
+      labels:
+        app: kafka
+    spec:
+      # ⚠️  ОБЯЗАТЕЛЬНО для Confluent Kafka в K8s!
+      # Отключает автоматическую инжекцию переменных вида KAFKA_PORT, KAFKA_SERVICE_HOST
+      # которые K8s создаёт для каждого Service в этом namespace.
+      # Без этого Kafka упадёт через 2 секунды после старта.
+      enableServiceLinks: false
+
+      # initContainer — выполняется ДО старта основного контейнера Kafka.
+      # Ждёт пока ZooKeeper откроет порт 2181. Без этого Kafka упадёт:
+      # "Connection to zookeeper refused" → CrashLoopBackOff
+      initContainers:
+        - name: wait-for-zookeeper
+          image: busybox:1.36            # Минимальный Linux-образ с сетевыми утилитами
+          command:
+            - sh
+            - -c
+            - until nc -z zookeeper 2181; do sleep 2; done
+            # nc -z host port — "zero I/O mode": проверяет открытость TCP-порта
+            # Выходит с кодом 0 (успех) когда порт принимает соединения
+            # until ... ; do sleep 2; done — цикл с паузой 2 сек между попытками
+
+      containers:
+        - name: kafka
+          image: confluentinc/cp-kafka:7.6.0  # Confluent Kafka — та же версия что в docker-compose.yml
+          env:
+            - name: KAFKA_BROKER_ID
+              value: "1"            # Уникальный ID брокера в кластере. При одном брокере всегда 1.
+
+            - name: KAFKA_ZOOKEEPER_CONNECT
+              value: "zookeeper:2181"  # Адрес ZooKeeper. "zookeeper" резолвится через K8s DNS
+                                       # в ClusterIP сервиса из 04-zookeeper.yaml
+
+            # Два listener'а на разных портах:
+            - name: KAFKA_LISTENERS
+              value: "PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092"
+              # PLAINTEXT — внутренний listener (для подов в K8s)
+              # PLAINTEXT_HOST — внешний listener (для kubectl port-forward с хоста)
+              # 0.0.0.0 — слушать на всех сетевых интерфейсах контейнера
+
+            # Что Kafka сообщает клиентам как свой адрес для подключения:
+            - name: KAFKA_ADVERTISED_LISTENERS
+              value: "PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092"
+              # kafka:29092 — поды внутри K8s используют K8s DNS (имя сервиса "kafka")
+              # localhost:9092 — хост-машина через: kubectl port-forward svc/kafka 9092:9092
+
+            - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+              value: "PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
+              # Оба listener'а используют PLAINTEXT (без TLS) — нормально для dev-среды
+
+            - name: KAFKA_INTER_BROKER_LISTENER_NAME
+              value: "PLAINTEXT"    # Брокеры между собой общаются через PLAINTEXT listener (порт 29092)
+
+            - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+              value: "1"            # Топик __consumer_offsets реплицируется на 1 брокер
+                                    # При одном брокере должно быть 1, иначе Kafka не стартует
+
+            - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
+              value: "true"         # Автоматически создавать топики при первой отправке
+                                    # Spring Boot создаст "booking-lifecycle" автоматически
+
+          ports:
+            - containerPort: 29092  # Внутренний порт (для других подов в K8s)
+            - containerPort: 9092   # Внешний порт (для подключения с хоста через port-forward)
+
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "nc -z localhost 9092"]
+              # Простая проверка: открыт ли порт 9092?
+              # Когда Kafka готов принимать подключения — порт открывается
+            initialDelaySeconds: 20  # Kafka стартует дольше ZooKeeper (~15-20 сек)
+            periodSeconds: 10
+            failureThreshold: 6      # 6 × 10 = 60 сек на запуск
+
+---
+# --- Объект 2: Service ---
+# Service с двумя портами — внутренним и внешним.
+# Приложение (booking-service) подключается через PLAINTEXT (kafka:29092).
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka           # DNS-имя: kafka.pet-booking.svc.cluster.local
+                        # ВАЖНО: это имя совпадает с KAFKA_ADVERTISED_LISTENERS "PLAINTEXT://kafka:29092"
+                        # — именно поэтому клиенты могут резолвить "kafka" как IP этого Service
+  namespace: pet-booking
+spec:
+  selector:
+    app: kafka          # Трафик → поды с label app=kafka
+  ports:
+    - name: internal    # Порт для подключения из других подов кластера
+      port: 29092       # Порт Service (что снаружи)
+      targetPort: 29092 # Порт контейнера (куда идёт трафик)
+    - name: external    # Порт для подключения с хоста через kubectl port-forward
+      port: 9092
+      targetPort: 9092
+  type: ClusterIP       # Kafka не должна быть доступна напрямую снаружи кластера

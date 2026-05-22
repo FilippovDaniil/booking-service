@@ -1,0 +1,59 @@
+# ============================================================
+# 03-redis.yaml — Кэш для refresh-токенов (Redis 7)
+#
+# Redis используется в приложении для хранения refresh-токенов с TTL.
+# Если Redis недоступен, TokenService переключается на in-memory fallback
+# (Spring Boot не упадёт, только логи будут в Redis-заменителе).
+#
+# Отличие от PostgreSQL:
+#   - Нет PVC (данные в памяти, при перезапуске теряются — для токенов это нормально)
+#   - Простой Deployment + Service, без init-скриптов
+# ============================================================
+
+# --- Объект 1: Deployment ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: pet-booking
+spec:
+  replicas: 1           # Один экземпляр Redis
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7  # Redis 7 — та же версия что в docker-compose.yml
+                          # redis:7 = redis:7-alpine без alpine тега (меньше размер)
+          ports:
+            - containerPort: 6379  # Стандартный порт Redis
+          readinessProbe:          # Проверка готовности
+            exec:
+              command: ["redis-cli", "ping"]
+              # redis-cli ping → возвращает "PONG" если сервер работает
+              # Возвращает код 0 → под считается готовым
+            initialDelaySeconds: 5  # Redis стартует быстро, 5 сек достаточно
+            periodSeconds: 5
+            failureThreshold: 6
+
+---
+# --- Объект 2: Service ---
+# Приложение обращается к Redis по имени "redis" (= SPRING_REDIS_HOST в ConfigMap приложения)
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis         # DNS-имя: redis.pet-booking.svc.cluster.local
+                      # Совпадает с docker-compose сервисом "redis" → одна конфигурация для обоих
+  namespace: pet-booking
+spec:
+  selector:
+    app: redis        # Направить трафик на поды с label app=redis
+  ports:
+    - port: 6379      # Стандартный порт Redis
+      targetPort: 6379
+  type: ClusterIP     # Только внутри кластера — Redis не должен быть доступен снаружи

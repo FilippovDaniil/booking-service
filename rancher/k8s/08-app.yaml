@@ -1,0 +1,187 @@
+# ============================================================
+# 08-app.yaml — Spring Boot приложение (booking-service)
+#
+# Содержит:
+#   1. ConfigMap   — несекретные переменные окружения
+#   2. Deployment  — запуск контейнера приложения
+#   3. Service     — NodePort для доступа с хоста
+#
+# ПОРЯДОК ЗАВИСИМОСТЕЙ:
+# Приложение требует: PostgreSQL + Redis + Kafka
+# Три initContainer'а гарантируют что все зависимости готовы ДО старта Spring Boot.
+# Без этого: "Connection refused" → CrashLoopBackOff
+#
+# ОБРАЗ: booking-service:1.0.0
+# Образ НЕ тянется из registry (imagePullPolicy: Never) — он должен быть
+# предварительно загружен в Docker VM Rancher Desktop скриптом build-and-load.ps1
+#
+# ПОРТЫ:
+#   Приложение слушает на 8555 (из application.yml: server.port: 8555)
+#   NodePort 30555: http://localhost:30555
+# ============================================================
+
+# --- Объект 1: ConfigMap — несекретные переменные окружения ---
+# ConfigMap переопределяет значения из application.yml.
+# Секреты (пароли) — в Secret "booking-secrets" (01-secrets.yaml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: booking-config    # Имя ConfigMap — используется в envFrom.configMapRef.name
+  namespace: pet-booking
+data:
+  # URL PostgreSQL через K8s DNS.
+  # "postgres" = имя K8s Service из 02-postgres.yaml (не localhost!)
+  SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/bookingdb"
+
+  SPRING_DATASOURCE_USERNAME: "postgres"  # Пользователь БД (совпадает с POSTGRES_USER в 02-postgres.yaml)
+
+  # Redis — имя K8s Service из 03-redis.yaml
+  # Spring Boot 3.2+ переименовал: spring.redis.* → spring.data.redis.*
+  # Поэтому SPRING_DATA_REDIS_HOST, а не SPRING_REDIS_HOST
+  SPRING_DATA_REDIS_HOST: "redis"
+  SPRING_DATA_REDIS_PORT: "6379"
+
+  # Kafka — порт 29092 (INTERNAL listener), имя K8s Service из 05-kafka.yaml
+  # Не 9092! 9092 = EXTERNAL (для хоста через port-forward). Внутри кластера используем 29092.
+  SPRING_KAFKA_BOOTSTRAP_SERVERS: "kafka:29092"
+
+  # URL Loki для logback-spring.xml (loki4j appender)
+  # Loki4j читает эту переменную: ${LOKI_URL:-http://localhost:3100}
+  LOKI_URL: "http://loki:3100"
+
+  # Отключить MailHealthIndicator — он проверяет SMTP соединение.
+  # Если SMTP не настроен, HealthIndicator = DOWN → /actuator/health возвращает 503
+  # → readinessProbe провалится → K8s бесконечно перезапускает под.
+  # У нас mail не настроен → отключаем.
+  MANAGEMENT_HEALTH_MAIL_ENABLED: "false"
+
+  # Показывать детали health endpoint: какие компоненты DOWN и почему.
+  # Удобно для диагностики через: kubectl port-forward ... → GET /actuator/health
+  MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: "always"
+
+---
+# --- Объект 2: Deployment ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: booking-app
+  namespace: pet-booking
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: booking-app
+  template:
+    metadata:
+      labels:
+        app: booking-app
+    spec:
+      # initContainers выполняются СТРОГО ПО ПОРЯДКУ до старта основного контейнера.
+      # Каждый следующий initContainer стартует только после успешного завершения предыдущего.
+      initContainers:
+        # 1. Ждём PostgreSQL — Spring Boot сразу при старте пытается подключиться к БД
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - until nc -z postgres 5432; do sleep 2; done
+            # nc -z postgres 5432 → "есть ли TCP соединение к postgres:5432?"
+            # Возвращает 0 когда PostgreSQL принимает подключения
+
+        # 2. Ждём Redis — TokenService пытается подключиться при старте
+        - name: wait-for-redis
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - until nc -z redis 6379; do sleep 2; done
+
+        # 3. Ждём Kafka — приложение имеет @KafkaListener (NotificationService),
+        # который устанавливает соединение EAGERLY при старте Spring Boot контекста.
+        # Без этого: "Connection to node -1 could not be established" → CrashLoopBackOff
+        # Примечание: KafkaTemplate (producer) — LAZY, не нужен wait.
+        # Но @KafkaListener (consumer) — EAGER, нужен wait.
+        - name: wait-for-kafka
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - until nc -z kafka 29092; do sleep 2; done
+
+      containers:
+        - name: booking-app
+          image: booking-service:1.0.0  # Имя и тег должны совпадать со скриптом build-and-load.ps1
+          imagePullPolicy: Never        # ОБЯЗАТЕЛЬНО для Rancher Desktop!
+                                        # Never = брать только из локального Docker хранилища VM.
+                                        # Без этого K8s попытается скачать образ из registry → ErrImagePull
+                                        # (его там нет, мы загружали вручную через rdctl shell)
+
+          ports:
+            - containerPort: 8555  # Spring Boot порт из application.yml (server.port: 8555)
+
+          # envFrom загружает ВСЕ ключи из ConfigMap как переменные окружения.
+          # Удобнее чем перечислять каждую переменную отдельно через env:
+          envFrom:
+            - configMapRef:
+                name: booking-config  # ConfigMap определён выше в этом файле
+
+          # env: — отдельные переменные, особенно секреты (они не могут быть в envFrom вместе с Secret).
+          # Пароли берём из Secret — не хардкодим в ConfigMap или Deployment!
+          env:
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: booking-secrets  # Secret из 01-secrets.yaml
+                  key: db-password
+
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: booking-secrets
+                  key: jwt-secret
+
+          # readinessProbe — "готов ли под принимать трафик?"
+          # Пока probe не пройдёт — Service не роутит запросы на этот под.
+          # Spring Boot Actuator предоставляет /actuator/health endpoint.
+          readinessProbe:
+            httpGet:
+              path: /actuator/health  # Возвращает 200 если все компоненты UP (DB, Redis, Kafka)
+              port: 8555
+            initialDelaySeconds: 30   # JVM + Spring Boot стартует ~20-30 сек
+            periodSeconds: 10         # Проверять каждые 10 сек
+            failureThreshold: 6       # 6 × 10 = 60 сек максимум на прогрев
+
+          # livenessProbe — "жив ли под? нужно ли его перезапускать?"
+          # ВАЖНО: initialDelaySeconds БОЛЬШЕ чем у readinessProbe!
+          # Если liveness стартует раньше readiness, K8s перезапустит под во время старта.
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8555
+            initialDelaySeconds: 60   # Всегда > readiness.initialDelaySeconds (30)
+            periodSeconds: 15         # Проверять каждые 15 сек (реже чем readiness)
+            failureThreshold: 3       # 3 × 15 = 45 сек на восстановление до перезапуска
+
+---
+# --- Объект 3: Service ---
+# NodePort — делает приложение доступным с хост-машины по порту 30555.
+# URL после запуска:
+#   http://localhost:30555                        ← API
+#   http://localhost:30555/swagger-ui.html       ← Swagger UI
+#   http://localhost:30555/frontend/index.html   ← Фронтенд
+#   http://localhost:30555/actuator/health       ← Health check
+apiVersion: v1
+kind: Service
+metadata:
+  name: booking-service  # DNS-имя внутри кластера (другие поды обращаются по этому имени)
+  namespace: pet-booking
+spec:
+  selector:
+    app: booking-app     # Направлять трафик на поды с label app=booking-app
+  ports:
+    - port: 8555          # Порт Service внутри кластера
+      targetPort: 8555    # Порт контейнера Spring Boot
+      nodePort: 30555     # Порт на хосте (localhost:30555). Диапазон 30000-32767.
+                          # 30555: легко запомнить — 30000 + 555 (порт приложения)
+  type: NodePort          # Доступен снаружи кластера через localhost:30555
