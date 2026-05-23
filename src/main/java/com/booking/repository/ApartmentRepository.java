@@ -22,6 +22,14 @@ public interface ApartmentRepository extends JpaRepository<Apartment, Long> {
     List<Apartment> findByLandlord(User landlord);
 
     /**
+     * Загружает все квартиры с JOIN FETCH по landlord.
+     * Используется для реиндексации OpenSearch при старте.
+     * JOIN FETCH необходим: после findAll() JPA-сессия закрыта, lazy landlord → LazyInitializationException.
+     */
+    @Query("SELECT a FROM Apartment a LEFT JOIN FETCH a.landlord")
+    List<Apartment> findAllForReindex();
+
+    /**
      * Поиск доступных квартир с фильтрацией по городу, датам, гостям и цене.
      *
      * Логика «свободная квартира»:

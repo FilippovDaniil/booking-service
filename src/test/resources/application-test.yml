@@ -19,6 +19,9 @@ spring:
   main:
     allow-bean-definition-overriding: true
 
+opensearch:
+  enabled: false   # бин OpenSearchClient не создаётся → все тесты без OpenSearch
+
 jwt:
   secret: testSecretKeyThatIsAtLeast256bitsLongForHS256AlgorithmUsedInTests
   access-expiration-ms: 900000

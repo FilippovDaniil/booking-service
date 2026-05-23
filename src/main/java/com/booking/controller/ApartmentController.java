@@ -15,6 +15,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.net.URI;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -104,7 +106,9 @@ public class ApartmentController {
     @SecurityRequirement(name = "bearerAuth")
     @Operation(summary = "Create apartment (LANDLORD)")
     public ResponseEntity<ApartmentResponse> create(@Valid @RequestBody ApartmentRequest request) {
-        return ResponseEntity.ok(apartmentService.create(request));
+        ApartmentResponse created = apartmentService.create(request);
+        // 201 Created + Location: /api/apartments/{id}
+        return ResponseEntity.created(URI.create("/api/apartments/" + created.getId())).body(created);
     }
 
     /**

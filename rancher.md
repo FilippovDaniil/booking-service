@@ -755,6 +755,53 @@ $Images = [ordered]@{
 
 ---
 
+## OpenSearch в K8s
+
+OpenSearch требует специальной настройки ядра перед стартом.
+
+### vm.max_map_count — обязательное требование
+
+Без этого OpenSearch упадёт с Exit 78:
+```
+max virtual memory areas vm.max_map_count [65530] is too low, increase to at least [262144]
+```
+
+В 08-opensearch.yaml:
+```yaml
+initContainers:
+  - name: sysctl-fix
+    image: busybox:1.36
+    command: ["sysctl", "-w", "vm.max_map_count=262144"]
+    securityContext:
+      privileged: true  # обязательно для изменения параметра ядра
+```
+
+### imagePullPolicy для публичных образов
+
+```yaml
+imagePullPolicy: IfNotPresent  # НЕ Never!
+```
+
+`Never` — только для `booking-service:1.0.0` (загружается вручную).  
+`IfNotPresent` — для публичных образов (opensearch, postgres, grafana, loki).
+
+### Порядок инициализации приложения (09-app.yaml)
+
+Теперь 4 initContainers вместо 3:
+1. `wait-for-postgres`
+2. `wait-for-redis`
+3. `wait-for-kafka`
+4. `wait-for-opensearch` — ждёт `opensearch-service:9200`
+
+### Известная ловушка: сервис называется opensearch-service
+
+```yaml
+# В ConfigMap 09-app.yaml:
+OPENSEARCH_URL: "http://opensearch-service:9200"  # НЕ opensearch, НЕ localhost
+```
+
+---
+
 ## Адаптация для других проектов
 
 ### Что нужно изменить в манифестах:

@@ -12,6 +12,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.net.URI;
+
 import java.util.List;
 
 /**
@@ -46,7 +48,9 @@ public class ReviewController {
     @SecurityRequirement(name = "bearerAuth")
     @Operation(summary = "Create review (CLIENT, only after COMPLETED booking)")
     public ResponseEntity<ReviewResponse> create(@Valid @RequestBody ReviewRequest request) {
-        return ResponseEntity.ok(reviewService.create(request));
+        ReviewResponse created = reviewService.create(request);
+        // 201 Created + Location: /api/reviews/{id}
+        return ResponseEntity.created(URI.create("/api/reviews/" + created.getId())).body(created);
     }
 
     /**

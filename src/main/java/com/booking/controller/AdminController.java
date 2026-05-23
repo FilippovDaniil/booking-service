@@ -1,8 +1,8 @@
 package com.booking.controller;
 
+import com.booking.dto.request.ChangeStatusRequest;
 import com.booking.dto.response.BookingResponse;
 import com.booking.entity.Booking;
-import com.booking.entity.enums.BookingStatus;
 import com.booking.exception.ResourceNotFoundException;
 import com.booking.repository.ApartmentRepository;
 import com.booking.repository.BookingRepository;
@@ -10,6 +10,7 @@ import com.booking.repository.UserRepository;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -60,22 +61,20 @@ public class AdminController {
     }
 
     /**
-     * PUT /api/admin/bookings/{id}/status?status=COMPLETED
+     * PATCH /api/admin/bookings/{id}/status
      * Принудительно меняет статус брони. Только для администраторов.
      *
-     * @RequestParam BookingStatus status — Spring автоматически преобразует строку
-     * из query-параметра в enum-значение (например, "CONFIRMED" → BookingStatus.CONFIRMED).
-     *
-     * Используется в экстренных ситуациях: исправить застрявшую бронь,
-     * перевести вручную, обойти ограничения бизнес-логики.
+     * Тело запроса: { "status": "COMPLETED" }
+     * PATCH — частичное обновление ресурса (только статус), тело содержит изменяемые поля.
+     * Используется в экстренных ситуациях: исправить застрявшую бронь, обойти бизнес-логику.
      */
-    @PutMapping("/bookings/{id}/status")
+    @PatchMapping("/bookings/{id}/status")
     @Operation(summary = "Force-change booking status")
     public ResponseEntity<BookingResponse> changeBookingStatus(
-            @PathVariable Long id, @RequestParam BookingStatus status) {
+            @PathVariable Long id, @Valid @RequestBody ChangeStatusRequest request) {
         Booking booking = bookingRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Booking not found"));
-        booking.setStatus(status);
+        booking.setStatus(request.getStatus());
         return ResponseEntity.ok(BookingResponse.from(bookingRepository.save(booking)));
     }
 }

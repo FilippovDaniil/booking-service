@@ -93,14 +93,14 @@ class ReviewControllerIntegrationTest {
     // ==================== POST /api/reviews ====================
 
     @Test
-    void createReview_успешноеСоздание_возвращает200() throws Exception {
+    void createReview_успешноеСоздание_возвращает201() throws Exception {
         ReviewRequest req = buildReviewRequest(bookingId, 5, "Great place!");
 
         mockMvc.perform(post("/api/reviews")
                         .header("Authorization", "Bearer " + clientToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
-                .andExpect(status().isOk())
+                .andExpect(status().isCreated())              // HTTP 201 — новый ресурс создан
                 .andExpect(jsonPath("$.rating").value(5))
                 .andExpect(jsonPath("$.comment").value("Great place!"));
     }

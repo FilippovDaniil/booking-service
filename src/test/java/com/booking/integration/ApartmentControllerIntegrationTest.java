@@ -81,17 +81,17 @@ class ApartmentControllerIntegrationTest {
     // ==================== POST /api/apartments (только LANDLORD) ====================
 
     @Test
-    void create_арендодатель_успешноеСоздание() throws Exception {
+    void create_арендодатель_успешноеСоздание_возвращает201() throws Exception {
         ApartmentRequest req = buildApartmentRequest();
 
         mockMvc.perform(post("/api/apartments")
                         .header("Authorization", "Bearer " + landlordToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
-                .andExpect(status().isOk())
+                .andExpect(status().isCreated())              // HTTP 201 — новый ресурс создан
                 .andExpect(jsonPath("$.name").value("Test Apartment"))
                 .andExpect(jsonPath("$.city").value("Moscow"))
-                .andExpect(jsonPath("$.active").value(true)); // квартира активна при создании
+                .andExpect(jsonPath("$.active").value(true));
     }
 
     @Test

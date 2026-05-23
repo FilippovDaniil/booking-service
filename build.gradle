@@ -52,6 +52,12 @@ dependencies {
     // Jackson
     implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310'
 
+    // OpenSearch
+    implementation 'org.opensearch.client:opensearch-java:2.15.0'
+    // ⚠️ Без явной версии — Spring Boot 3.4.x BOM управляет httpclient5 (5.4.x)
+    // Явная версия 5.3.x → NoClassDefFoundError: TlsSocketStrategy
+    implementation 'org.apache.httpcomponents.client5:httpclient5'
+
     // Tests
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.security:spring-security-test'

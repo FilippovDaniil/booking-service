@@ -1,6 +1,8 @@
 package com.booking.controller;
 
 import com.booking.dto.request.LoginRequest;
+import com.booking.dto.request.LogoutRequest;
+import com.booking.dto.request.RefreshTokenRequest;
 import com.booking.dto.request.RegisterRequest;
 import com.booking.dto.response.TokenResponse;
 import com.booking.service.AuthService;
@@ -11,7 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Map;
+import java.net.URI;
 
 /**
  * Контроллер аутентификации.
@@ -50,8 +52,9 @@ public class AuthController {
     @PostMapping("/register")
     @Operation(summary = "Register a new user")
     public ResponseEntity<TokenResponse> register(@Valid @RequestBody RegisterRequest request) {
-        // ResponseEntity.ok(...) = HTTP 200 + тело ответа в JSON
-        return ResponseEntity.ok(authService.register(request));
+        TokenResponse tokens = authService.register(request);
+        // 201 Created: новый ресурс (пользователь) создан
+        return ResponseEntity.created(URI.create("/api/users/me")).body(tokens);
     }
 
     /**
@@ -67,29 +70,24 @@ public class AuthController {
     /**
      * POST /api/auth/refresh
      * Обновляет access-токен по refresh-токену.
-     *
-     * Тело запроса: { "refreshToken": "uuid-здесь" }
-     * Map<String, String> вместо отдельного DTO — для простоты, поле одно.
+     * Тело: { "refreshToken": "uuid" }
      */
     @PostMapping("/refresh")
     @Operation(summary = "Refresh access token")
-    public ResponseEntity<TokenResponse> refresh(@RequestBody Map<String, String> body) {
-        String refreshToken = body.get("refreshToken");
-        return ResponseEntity.ok(authService.refresh(refreshToken));
+    public ResponseEntity<TokenResponse> refresh(@Valid @RequestBody RefreshTokenRequest request) {
+        return ResponseEntity.ok(authService.refresh(request.getRefreshToken()));
     }
 
     /**
      * POST /api/auth/logout
      * Инвалидирует refresh-токен (удаляет из Redis).
-     *
-     * ResponseEntity.noContent().build() = HTTP 204 No Content (успех, тела нет).
-     * Access-токен остаётся валидным до истечения срока (15 мин) — это нормально,
-     * так как он краткосрочный и не хранится на сервере.
+     * 204 No Content: действие выполнено, тела ответа нет.
+     * Access-токен остаётся валидным до истечения (15 мин) — он краткосрочный и не хранится на сервере.
      */
     @PostMapping("/logout")
     @Operation(summary = "Logout and invalidate refresh token")
-    public ResponseEntity<Void> logout(@RequestBody Map<String, String> body) {
-        authService.logout(body.get("refreshToken"));
+    public ResponseEntity<Void> logout(@Valid @RequestBody LogoutRequest request) {
+        authService.logout(request.getRefreshToken());
         return ResponseEntity.noContent().build();
     }
 }

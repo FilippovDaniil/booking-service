@@ -82,17 +82,17 @@ class BookingControllerIntegrationTest {
     // ==================== POST /api/bookings ====================
 
     @Test
-    void createBooking_клиент_успешноеСоздание_статус_PENDING() throws Exception {
+    void createBooking_клиент_успешноеСоздание_возвращает201_статус_PENDING() throws Exception {
         BookingRequest req = buildBookingRequest(apartmentId,
                 LocalDate.now().plusDays(10), LocalDate.now().plusDays(13)); // 3 ночи × 2000 = 6000
 
         mockMvc.perform(post("/api/bookings")
-                        .header("Authorization", "Bearer " + clientToken) // JWT-токен в заголовке
+                        .header("Authorization", "Bearer " + clientToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("PENDING"))   // только создана, не подтверждена
-                .andExpect(jsonPath("$.totalPrice").value(6000.0)); // 3 ночи × 2000
+                .andExpect(status().isCreated())                    // HTTP 201 — новый ресурс создан
+                .andExpect(jsonPath("$.status").value("PENDING"))
+                .andExpect(jsonPath("$.totalPrice").value(6000.0));
     }
 
     @Test

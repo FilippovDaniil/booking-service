@@ -1,5 +1,5 @@
 # ============================================================
-# 09-dashboard.yaml — Kubernetes Dashboard (веб-интерфейс управления кластером)
+# 10-dashboard.yaml — Kubernetes Dashboard (веб-интерфейс управления кластером)
 #
 # Kubernetes Dashboard — официальный веб-UI для просмотра и управления кластером.
 # Устанавливается в отдельный namespace "kubernetes-dashboard" (не в pet-booking!).

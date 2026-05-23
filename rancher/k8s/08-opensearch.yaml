@@ -1,0 +1,92 @@
+# ============================================================
+# 08-opensearch.yaml — OpenSearch (полнотекстовый поиск)
+#
+# Содержит:
+#   1. Deployment  — запуск контейнера OpenSearch
+#   2. Service     — ClusterIP для доступа из приложения
+#
+# КРИТИЧЕСКИЕ ТРЕБОВАНИЯ:
+#   vm.max_map_count: без sysctl initContainer OpenSearch упадёт с Exit 78:
+#   "max virtual memory areas vm.max_map_count [65530] is too low"
+#
+#   imagePullPolicy: IfNotPresent — НЕ Never!
+#   Never — только для кастомных образов (booking-service:1.0.0).
+#   Публичные образы (opensearchproject/opensearch) используют IfNotPresent.
+#
+# ДОСТУП ВНУТРИ КЛАСТЕРА:
+#   http://opensearch-service:9200
+# ============================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opensearch
+  namespace: pet-booking
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: opensearch
+  template:
+    metadata:
+      labels:
+        app: opensearch
+    spec:
+      initContainers:
+        # Обязательно: устанавливает vm.max_map_count без этого OpenSearch не запустится
+        - name: sysctl-fix
+          image: busybox:1.36
+          command: ["sysctl", "-w", "vm.max_map_count=262144"]
+          securityContext:
+            privileged: true   # требуется для изменения параметра ядра
+
+      containers:
+        - name: opensearch
+          image: opensearchproject/opensearch:2.17.0
+          imagePullPolicy: IfNotPresent   # публичный образ — тянем из registry если нет локально
+          ports:
+            - containerPort: 9200
+          env:
+            - name: discovery.type
+              value: single-node
+            - name: DISABLE_SECURITY_PLUGIN
+              value: "true"         # HTTP без TLS — только для dev/local!
+            - name: bootstrap.memory_lock
+              value: "false"
+            - name: OPENSEARCH_JAVA_OPTS
+              value: "-Xms512m -Xmx512m"   # фиксируем heap — не превысит limits.memory
+          resources:
+            requests:
+              memory: "600Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          readinessProbe:
+            httpGet:
+              path: /_cluster/health
+              port: 9200
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 12    # 120 сек на прогрев — OpenSearch стартует медленно
+          volumeMounts:
+            - name: opensearch-data
+              mountPath: /usr/share/opensearch/data
+
+      volumes:
+        - name: opensearch-data
+          emptyDir: {}    # данные живут вместе с подом (dev-режим, без PVC)
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opensearch-service   # ← это имя использует приложение: OPENSEARCH_URL=http://opensearch-service:9200
+  namespace: pet-booking
+spec:
+  selector:
+    app: opensearch
+  ports:
+    - port: 9200
+      targetPort: 9200
+  type: ClusterIP             # доступен только внутри кластера

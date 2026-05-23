@@ -55,7 +55,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *   mockMvc.perform(post("/api/auth/register")   // отправляем HTTP POST
  *       .contentType(MediaType.APPLICATION_JSON) // тип контента
  *       .content(json))                          // тело запроса
- *     .andExpect(status().isOk())                // ожидаем HTTP 200
+ *     .andExpect(status().isCreated())           // ожидаем HTTP 201 (register) или 200 (login)
  *     .andExpect(jsonPath("$.accessToken").isNotEmpty()) // ожидаем поле в JSON
  *
  * jsonPath("$...") — синтаксис JSONPath для навигации по JSON:
@@ -84,14 +84,14 @@ class AuthControllerIntegrationTest {
     // ==================== POST /api/auth/register ====================
 
     @Test
-    void register_успешнаяРегистрация_возвращает200иТокены() throws Exception {
+    void register_успешнаяРегистрация_возвращает201иТокены() throws Exception {
         RegisterRequest request = buildRegisterRequest("new@test.com", Role.CLIENT);
 
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request))) // объект → JSON
-                .andExpect(status().isOk())                                 // HTTP 200
-                .andExpect(jsonPath("$.accessToken").isNotEmpty())          // токен не пуст
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isCreated())                           // HTTP 201 — новый ресурс создан
+                .andExpect(jsonPath("$.accessToken").isNotEmpty())
                 .andExpect(jsonPath("$.refreshToken").isNotEmpty());
     }
 

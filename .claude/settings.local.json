@@ -45,7 +45,18 @@
       "Bash(kubectl rollout *)",
       "Bash(kubectl logs *)",
       "Bash(kubectl exec *)",
-      "Bash(Start-Sleep 15)"
+      "Bash(Start-Sleep 15)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\MaxxPC\\\\IdeaProjects\\\\Pet_Booking\" -Force | Select-Object Name, @{Name=\"Type\";Expression={if\\($_.PSIsContainer\\){\"DIR\"}else{\"FILE\"}}} | Format-Table -AutoSize)",
+      "Bash(./gradlew compileJava --no-daemon -q)",
+      "Bash(dir *)",
+      "Bash(./gradlew compileTestJava --no-daemon -q)",
+      "Bash(powershell.exe -File \"rancher\\\\build-and-load.ps1\")",
+      "PowerShell($TarPath = \"$env:TEMP\\\\booking-service.tar\"; docker save booking-service:1.0.0 -o $TarPath; if \\($?\\) { Write-Host \"Saved to $TarPath\" } else { Write-Host \"ERROR\" })",
+      "PowerShell($LinuxPath = \"/mnt/c/Users/$env:USERNAME/AppData/Local/Temp/booking-service.tar\"; rdctl shell -- sh -c \"docker load < $LinuxPath\" 2>&1)",
+      "PowerShell(kubectl apply *)",
+      "PowerShell(kubectl rollout restart *)",
+      "PowerShell(kubectl get pods *)",
+      "PowerShell(kubectl get all *)"
     ]
   }
 }

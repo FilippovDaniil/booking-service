@@ -12,6 +12,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.net.URI;
+
 import java.util.List;
 
 /**
@@ -49,7 +51,9 @@ public class BookingController {
     @PostMapping
     @Operation(summary = "Create booking (CLIENT)")
     public ResponseEntity<BookingResponse> create(@Valid @RequestBody BookingRequest request) {
-        return ResponseEntity.ok(bookingService.create(request));
+        BookingResponse created = bookingService.create(request);
+        // 201 Created + Location: /api/bookings/{id}
+        return ResponseEntity.created(URI.create("/api/bookings/" + created.getId())).body(created);
     }
 
     /**

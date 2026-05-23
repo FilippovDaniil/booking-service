@@ -8,8 +8,10 @@ import com.booking.entity.enums.Role;
 import com.booking.exception.AccessDeniedException;
 import com.booking.exception.ResourceNotFoundException;
 import com.booking.repository.ApartmentRepository;
+import com.booking.search.ApartmentSearchService;
 import com.booking.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -34,6 +36,10 @@ public class ApartmentService {
     private final ApartmentRepository apartmentRepository;
     private final SecurityUtils securityUtils;
 
+    // null когда opensearch.enabled=false (тесты и dev без OpenSearch)
+    @Autowired(required = false)
+    private ApartmentSearchService searchService;
+
     /** Создаёт квартиру; текущий пользователь автоматически становится арендодателем. */
     @Transactional
     public ApartmentResponse create(ApartmentRequest request) {
@@ -51,7 +57,9 @@ public class ApartmentService {
                 .build();
         if (request.getAmenities() != null) apartment.setAmenities(request.getAmenities());
         if (request.getPhotos() != null) apartment.setPhotos(request.getPhotos());
-        return ApartmentResponse.from(apartmentRepository.save(apartment));
+        Apartment saved = apartmentRepository.save(apartment);
+        if (searchService != null) searchService.indexApartment(saved);
+        return ApartmentResponse.from(saved);
     }
 
     /** Обновляет квартиру; проверяет, что текущий пользователь — её владелец. */
@@ -67,7 +75,9 @@ public class ApartmentService {
         apartment.setMaxGuests(request.getMaxGuests());
         if (request.getAmenities() != null) apartment.setAmenities(request.getAmenities());
         if (request.getPhotos() != null) apartment.setPhotos(request.getPhotos());
-        return ApartmentResponse.from(apartmentRepository.save(apartment));
+        Apartment saved = apartmentRepository.save(apartment);
+        if (searchService != null) searchService.indexApartment(saved);
+        return ApartmentResponse.from(saved);
     }
 
     /**
@@ -84,6 +94,8 @@ public class ApartmentService {
         }
         apartment.setActive(false);
         apartmentRepository.save(apartment);
+        // Мягкое удаление — переиндексируем с active=false, чтобы пропал из поиска
+        if (searchService != null) searchService.indexApartment(apartment);
     }
 
     public ApartmentResponse getById(Long id) {

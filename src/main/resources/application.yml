@@ -46,6 +46,10 @@ booking:
 server:
   port: 8555
 
+opensearch:
+  enabled: true
+  url: ${OPENSEARCH_URL:http://localhost:9200}
+
 springdoc:
   api-docs:
     path: /api-docs
