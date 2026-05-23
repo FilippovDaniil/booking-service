@@ -56,7 +56,9 @@
       "PowerShell(kubectl apply *)",
       "PowerShell(kubectl rollout restart *)",
       "PowerShell(kubectl get pods *)",
-      "PowerShell(kubectl get all *)"
+      "PowerShell(kubectl get all *)",
+      "Bash(Select-Object Name, PSIsContainer)",
+      "PowerShell(Get-ChildItem -Recurse C:\\\\Users\\\\MaxxPC\\\\IdeaProjects\\\\Pet_Booking\\\\frontend-mobile\\\\src -File | Select-Object -ExpandProperty FullName | ForEach-Object { $_.Replace\\(\"C:\\\\Users\\\\MaxxPC\\\\IdeaProjects\\\\Pet_Booking\\\\frontend-mobile\\\\src\\\\\",\"\"\\) })"
     ]
   }
 }
