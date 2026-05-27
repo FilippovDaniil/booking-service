@@ -43,6 +43,7 @@ jobs:
       # exit-code: 0 — не блокируем pipeline, только фиксируем в Security tab.
       # Переключи на exit-code: 1 чтобы блокировать merge при наличии CRITICAL.
       - name: Run Trivy scan
+        id: trivy
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: pet-booking:scan
@@ -51,9 +52,10 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: '0'
 
+      # hashFiles проверяет что файл создан — если Docker build упал, файла нет
       - name: Upload SARIF to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('trivy-results.sarif') != ''
         with:
           sarif_file: trivy-results.sarif
           category: trivy-container
@@ -111,8 +113,8 @@ jobs:
           args: ${{ steps.owasp-args.outputs.args }}
 
       - name: Upload Dependency Check SARIF
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('reports/dependency-check-report.sarif') != ''
         with:
           sarif_file: reports/dependency-check-report.sarif
           category: owasp-dependency-check

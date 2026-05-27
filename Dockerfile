@@ -25,6 +25,8 @@ WORKDIR /app
 COPY build.gradle settings.gradle ./
 COPY gradle/ gradle/
 COPY gradlew ./
+# gradlew скопирован из Windows — executable bit мог не сохраниться
+RUN chmod +x gradlew
 
 # Скачиваем зависимости (этот слой будет закэширован)
 RUN ./gradlew dependencies --no-daemon || true
