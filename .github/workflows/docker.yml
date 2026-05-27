@@ -1,0 +1,75 @@
+name: Docker
+
+on:
+  push:
+    branches: [master, main]
+    tags: ['v*']
+  workflow_dispatch:    # ручной запуск при необходимости
+
+# Один запуск на ветку — предыдущий отменяется при новом пуше
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  # github.repository = "username/Pet_Booking" → metadata-action приведёт к lowercase
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-push:
+    name: Build & Push image
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write    # необходимо для push в ghcr.io
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Buildx включает BuildKit: поддержка cache-from/cache-to и multi-platform
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Авторизация через встроенный GITHUB_TOKEN — секреты не нужны
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Генерирует теги и OCI-labels по правилам:
+      #   push master     → sha-abc1234, master, latest
+      #   push v1.2.3     → v1.2.3, v1.2, v1, latest
+      #   push v1.2.3-rc1 → v1.2.3-rc1 (prerelease, latest НЕ обновляется)
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      # Собирает и пушит образ.
+      # cache-from/to держат Gradle-слой закэшированным между запусками —
+      # после первого прогона Gradle-зависимости не скачиваются повторно.
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Печатает итоговый digest образа в лог — удобно для отладки и аудита
+      - name: Print image digest
+        run: echo "Image digest ${{ steps.build-push.outputs.digest }}"
